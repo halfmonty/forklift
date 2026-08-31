@@ -1,0 +1,12 @@
+pub const steering_gain: f32 = 0.25;
+pub const wheelbase: f32 = 28.0;
+pub const acceleration: f32 = 100.0;
+pub const braking: f32 = 240.0;
+pub const coast_drag: f32 = 90.0;
+pub const max_forward_speed: f32 = 100.0;
+pub const max_reverse_speed: f32 = 70.0;
+pub const screen_width: f32 = 400.0;
+pub const screen_height: f32 = 240.0;
+pub const world_width: f32 = 1200.0;
+pub const world_height: f32 = 800.0;
+pub const carried_acceleration_multiplier: f32 = 0.7;
