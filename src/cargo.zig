@@ -15,14 +15,25 @@ pub const Footprint = struct {
 
 pub const CargoDef = struct {
     carried_acceleration_multiplier: f32,
+    footprint: Footprint,
 };
 
 pub const standard_cargo = CargoDef{
     .carried_acceleration_multiplier = config.carried_acceleration_multiplier,
+    .footprint = .{},
 };
 
 pub const heavy_cargo = CargoDef{
     .carried_acceleration_multiplier = 0.45,
+    .footprint = .{},
+};
+
+pub const long_cargo = CargoDef{
+    .carried_acceleration_multiplier = config.carried_acceleration_multiplier,
+    .footprint = .{
+        .half_length = 30,
+        .half_width = 14,
+    },
 };
 
 pub const Pallet = struct {
@@ -34,6 +45,7 @@ pub const Pallet = struct {
     entry_back: f32 = -14,
     entry_front: f32 = 10,
     carry_offset: math2.Vec2 = .{ .x = 0, .y = 0 },
+    carry_heading_offset_rad: f32 = 0,
     footprint: Footprint = .{},
     z: f32 = 0,
     support_z: f32 = 0,
@@ -64,6 +76,13 @@ pub fn evaluateForkEntry(
         forklift.heading_rad,
         pallet.heading_rad,
     );
+    const entry_half_extent = halfExtentAlong(
+        pallet,
+        entry_heading,
+    );
+    const entry_back = -entry_half_extent;
+    const entry_front =
+        entry_back + (pallet.entry_front - pallet.entry_back);
     const left = worldToPalletLocal(
         forks.left_tip,
         pallet.position,
@@ -84,16 +103,16 @@ pub fn evaluateForkEntry(
     const right_lane_error = @abs(right.lateral -
         pallet.fork_lane_offset);
     const insertion_depth = @min(
-        left.longitudinal - pallet.entry_back,
-        right.longitudinal - pallet.entry_back,
+        left.longitudinal - entry_back,
+        right.longitudinal - entry_back,
     );
 
     const left_in_entry = left.longitudinal >=
-        pallet.entry_back and
-        left.longitudinal <= pallet.entry_front;
+        entry_back and
+        left.longitudinal <= entry_front;
     const right_in_entry = right.longitudinal >=
-        pallet.entry_back and
-        right.longitudinal <= pallet.entry_front;
+        entry_back and
+        right.longitudinal <= entry_front;
 
     return .{
         .valid = pallet.state == .floor and
@@ -133,6 +152,22 @@ fn worldToPalletLocal(
         .longitudinal = math2.dot(delta, forward),
     };
 }
+
+fn halfExtentAlong(
+    pallet: Pallet,
+    direction_heading_rad: f32,
+) f32 {
+    const angle = math2.shortestAngleDifference(
+        pallet.heading_rad,
+        direction_heading_rad,
+    );
+
+    return @abs(@cos(angle)) *
+        pallet.footprint.half_length +
+        @abs(@sin(angle)) *
+            pallet.footprint.half_width;
+}
+
 pub fn tryPickup(
     pallet: *Pallet,
     forklift: vehicle.Forklift,
@@ -155,6 +190,11 @@ pub fn tryPickup(
         .x = math2.dot(delta, right),
         .y = math2.dot(delta, forward),
     };
+    pallet.carry_heading_offset_rad =
+        math2.shortestAngleDifference(
+            forklift.heading_rad,
+            pallet.heading_rad,
+        );
     pallet.state = .carried;
     pallet.z = pallet.carry_z;
     pallet.support_z = 0;
@@ -179,7 +219,10 @@ pub fn followForks(
             math2.scale(forward, pallet.carry_offset.y),
         ),
     );
-    pallet.heading_rad = forklift.heading_rad;
+    pallet.heading_rad = math2.wrapAngle(
+        forklift.heading_rad +
+            pallet.carry_heading_offset_rad,
+    );
 }
 
 pub fn drop(pallet: *Pallet) void {
@@ -268,4 +311,68 @@ test "forks enter pallet from its right side" {
             .minimum_insertion = 18,
         },
     ).valid);
+}
+
+test "side pickup preserves long pallet orientation" {
+    var forklift = vehicle.Forklift{
+        .position = .{
+            .x = 647.44,
+            .y = 330,
+        },
+        .heading_rad = 3.0 * std.math.pi / 2.0,
+    };
+    var pallet = Pallet{
+        .position = .{ .x = 600, .y = 330 },
+        .footprint = .{
+            .half_length = 30,
+            .half_width = 14,
+        },
+    };
+    const tuning = PickupTuning{
+        .max_angle_error_rad = 0.4,
+        .tine_lateral_tolerance = 3,
+        .minimum_insertion = 18,
+    };
+
+    try std.testing.expect(tryPickup(
+        &pallet,
+        forklift,
+        tuning,
+    ));
+
+    followForks(&pallet, forklift);
+    try std.testing.expectApproxEqAbs(
+        @as(f32, 0),
+        pallet.heading_rad,
+        0.001,
+    );
+
+    forklift.heading_rad = 0;
+    followForks(&pallet, forklift);
+    try std.testing.expectApproxEqAbs(
+        std.math.pi / 2.0,
+        pallet.heading_rad,
+        0.001,
+    );
+}
+
+test "long pallet picks up with forks near its narrow edge" {
+    const forklift = vehicle.Forklift{
+        .position = .{ .x = 600, .y = 395.44 },
+    };
+    const pallet = Pallet{
+        .position = .{ .x = 600, .y = 330 },
+        .footprint = .{
+            .half_length = 30,
+            .half_width = 14,
+        },
+    };
+
+    const result = evaluateForkEntry(forklift, pallet, .{
+        .max_angle_error_rad = 0.4,
+        .tine_lateral_tolerance = 3,
+        .minimum_insertion = 18,
+    });
+
+    try std.testing.expect(result.valid);
 }

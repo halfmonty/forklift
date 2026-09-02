@@ -11,6 +11,69 @@ const jobs = @import("jobs.zig");
 const render25d = @import("render25d.zig");
 const render = @import("render.zig");
 
+const stress_mode = true;
+const render_cull_margin: f32 = 50;
+
+const normal_obstacles = [_]collision.Rect{
+    occlusion_rack,
+    .{ .x = 220, .y = 500, .width = 520, .height = 36 },
+    .{ .x = 820, .y = 280, .width = 36, .height = 256 },
+};
+
+const stress_obstacles = normal_obstacles ++ [_]collision.Rect{
+    .{ .x = 40, .y = 40, .width = 160, .height = 28 },
+    .{ .x = 260, .y = 40, .width = 160, .height = 28 },
+    .{ .x = 480, .y = 40, .width = 160, .height = 28 },
+    .{ .x = 700, .y = 40, .width = 160, .height = 28 },
+    .{ .x = 920, .y = 40, .width = 160, .height = 28 },
+
+    .{ .x = 40, .y = 732, .width = 160, .height = 28 },
+    .{ .x = 260, .y = 732, .width = 160, .height = 28 },
+    .{ .x = 480, .y = 732, .width = 160, .height = 28 },
+    .{ .x = 700, .y = 732, .width = 160, .height = 28 },
+    .{ .x = 920, .y = 732, .width = 160, .height = 28 },
+};
+
+const stress_pallets = [_]cargo.Pallet{
+    .{ .position = .{ .x = 440, .y = 330 } },
+    .{ .position = .{ .x = 500, .y = 330 } },
+    .{ .position = .{ .x = 560, .y = 330 } },
+    .{ .position = .{ .x = 620, .y = 330 } },
+    .{ .position = .{ .x = 680, .y = 330 } },
+    .{ .position = .{ .x = 440, .y = 410 } },
+    .{ .position = .{ .x = 500, .y = 410 } },
+    .{ .position = .{ .x = 560, .y = 410 } },
+    .{ .position = .{ .x = 620, .y = 410 } },
+    .{ .position = .{ .x = 680, .y = 410 } },
+    .{
+        .position = .{ .x = 740, .y = 330 },
+        .cargo = cargo.long_cargo,
+        .footprint = cargo.long_cargo.footprint,
+    },
+    .{
+        .position = .{ .x = 740, .y = 440 },
+        .cargo = cargo.heavy_cargo,
+        .footprint = cargo.heavy_cargo.footprint,
+    },
+};
+
+const stress_racks = [_]collision.Rect{
+    .{ .x = 280, .y = 180, .width = 160, .height = 36 },
+    .{ .x = 520, .y = 180, .width = 160, .height = 36 },
+    .{ .x = 760, .y = 180, .width = 160, .height = 36 },
+    .{ .x = 280, .y = 300, .width = 160, .height = 36 },
+    .{ .x = 520, .y = 300, .width = 160, .height = 36 },
+    .{ .x = 760, .y = 300, .width = 160, .height = 36 },
+    .{ .x = 280, .y = 540, .width = 160, .height = 36 },
+    .{ .x = 640, .y = 540, .width = 160, .height = 36 },
+};
+
+const obstacles: []const collision.Rect =
+    if (stress_mode)
+        &stress_obstacles
+    else
+        &normal_obstacles;
+
 pub const panic = panic_handler.panic;
 
 const projection_tuning = render25d.default_tuning;
@@ -49,12 +112,6 @@ const rack_low_shelf = Shelf{
     .support_z = vehicle.forkZ(.rack_low),
 };
 
-const obstacles = [_]collision.Rect{
-    occlusion_rack,
-    .{ .x = 220, .y = 500, .width = 520, .height = 36 },
-    .{ .x = 820, .y = 280, .width = 36, .height = 256 },
-};
-
 const pickup_tuning = cargo.PickupTuning{
     .max_angle_error_rad = 0.4,
     .tine_lateral_tolerance = 3,
@@ -63,12 +120,16 @@ const pickup_tuning = cargo.PickupTuning{
 
 const jobs_data = [_]jobs.JobDefinition{
     .{
-        .pallet_spawn = .{ .x = 600, .y = 300 },
+        .pallet_spawn = .{
+            .position = .{ .x = 600, .y = 300 },
+        },
         .destination = destination,
         .cargo = cargo.standard_cargo,
     },
     .{
-        .pallet_spawn = .{ .x = 300, .y = 600 },
+        .pallet_spawn = .{
+            .position = .{ .x = 300, .y = 600 },
+        },
         .destination = .{
             .x = 900,
             .y = 550,
@@ -77,7 +138,42 @@ const jobs_data = [_]jobs.JobDefinition{
         },
         .cargo = cargo.heavy_cargo,
     },
+    .{
+        .pallet_spawn = .{
+            .position = .{ .x = 1010, .y = 430 },
+            .support_z = vehicle.forkZ(.rack_low),
+        },
+        .destination = .{
+            .x = 500,
+            .y = 600,
+            .width = 100,
+            .height = 100,
+        },
+        .cargo = cargo.standard_cargo,
+    },
+    .{
+        .pallet_spawn = .{
+            .position = .{ .x = 600, .y = 650 },
+        },
+        .destination = .{
+            .x = 880,
+            .y = 100,
+            .width = 120,
+            .height = 120,
+        },
+        .cargo = cargo.long_cargo,
+    },
 };
+
+fn palletForJob(job: jobs.JobDefinition) cargo.Pallet {
+    return .{
+        .position = job.pallet_spawn.position,
+        .z = job.pallet_spawn.support_z,
+        .support_z = job.pallet_spawn.support_z,
+        .cargo = job.cargo,
+        .footprint = job.cargo.footprint,
+    };
+}
 
 pub const Game = struct {
     playdate: *pdapi.PlaydateAPI,
@@ -88,11 +184,10 @@ pub const Game = struct {
     debug_buffer: [192]u8 = undefined,
     camera: camera.Camera = .{},
     job_index: usize = 0,
-    pallet: cargo.Pallet = .{
-        .position = jobs_data[0].pallet_spawn,
-    },
+    pallet: cargo.Pallet = palletForJob(jobs_data[0]),
     job_state: jobs.JobState = .waiting_for_pickup,
     job_elapsed_seconds: f32 = 0,
+    fame_ms: f32 = 0,
 };
 
 pub export fn eventHandler(
@@ -109,6 +204,7 @@ pub export fn eventHandler(
         null,
     ) orelse return 0;
     playdate.graphics.setFont(font);
+    playdate.display.setRefreshRate(50);
 
     const game: *Game = @ptrCast(@alignCast(
         playdate.system.realloc(null, @sizeOf(Game)) orelse return 0,
@@ -131,7 +227,9 @@ fn updateAndRender(userdata: ?*anyopaque) callconv(.c) c_int {
     var pushed: pdapi.PDButtons = 0;
     playdate.system.getButtonState(&current, &pushed, null);
 
-    const dt = @min(playdate.system.getElapsedTime(), 1.0 / 15.0);
+    const raw_dt = playdate.system.getElapsedTime();
+    const dt = @min(raw_dt, 1.0 / 15.0);
+    game.fame_ms = raw_dt * 1000.0;
     playdate.system.resetElapsedTime();
 
     const reset_held =
@@ -140,10 +238,7 @@ fn updateAndRender(userdata: ?*anyopaque) callconv(.c) c_int {
     if (reset_held) {
         game.forklift.reset(.{ .x = 600, .y = 400 });
         game.job_index = 0;
-        game.pallet = .{
-            .position = jobs_data[game.job_index].pallet_spawn,
-            .cargo = jobs_data[game.job_index].cargo,
-        };
+        game.pallet = palletForJob(jobs_data[game.job_index]);
         game.job_state = .waiting_for_pickup;
         game.job_elapsed_seconds = 0;
     }
@@ -237,10 +332,7 @@ fn updateAndRender(userdata: ?*anyopaque) callconv(.c) c_int {
             game.job_index + 1 < jobs_data.len)
         {
             game.job_index += 1;
-            game.pallet = .{
-                .position = jobs_data[game.job_index].pallet_spawn,
-                .cargo = jobs_data[game.job_index].cargo,
-            };
+            game.pallet = palletForJob(jobs_data[game.job_index]);
             game.job_state = .waiting_for_pickup;
             game.job_elapsed_seconds = 0;
         }
@@ -262,6 +354,19 @@ fn draw(game: *Game) void {
     render.drawTallBox(playdate, tall_box_position, game.camera, black);
 
     render.drawRackBack(playdate, occlusion_rack, game.camera, black);
+
+    if (stress_mode) {
+        for (stress_racks) |rack| {
+            if (!rectMayBeVisible(rack, game.camera)) continue;
+            render.drawRackBack(
+                playdate,
+                rack,
+                game.camera,
+                black,
+            );
+        }
+    }
+
     const entity_depth = if (game.pallet.state == .carried)
         @max(
             camera.depth(game.forklift.position, game.camera),
@@ -278,6 +383,18 @@ fn draw(game: *Game) void {
 
     if (!rack_front_after_entities) {
         render.drawRackFront(playdate, occlusion_rack, game.camera, black);
+    }
+
+    if (stress_mode) {
+        for (stress_racks) |rack| {
+            if (!rectMayBeVisible(rack, game.camera)) continue;
+            render.drawRackFront(
+                playdate,
+                rack,
+                game.camera,
+                black,
+            );
+        }
     }
 
     for (obstacles[1..]) |obstacle| {
@@ -297,12 +414,25 @@ fn draw(game: *Game) void {
     render.drawCone(playdate, .{ .x = 700, .y = 500 }, game.camera, black);
 
     render.drawShelf(playdate, rack_low_shelf.zone, rack_low_shelf.support_z, game.camera, black);
-    render.drawPalletShadow(
-        playdate,
-        game.pallet,
-        game.camera,
-        black,
-    );
+
+    if (stress_mode) {
+        for (stress_pallets) |pallet| {
+            if (!palletMayBeVisible(pallet, game.camera)) continue;
+            render.drawPalletShadow(
+                playdate,
+                pallet,
+                game.camera,
+                black,
+            );
+            render.drawPallet(
+                playdate,
+                pallet,
+                game.camera,
+                black,
+            );
+        }
+    }
+    render.drawPalletShadow(playdate, game.pallet, game.camera, black);
     render.drawPallet(playdate, game.pallet, game.camera, black);
     render.drawForklift(playdate, game.forklift, game.camera);
 
@@ -321,9 +451,12 @@ fn draw(game: *Game) void {
         game.pallet,
         pickup_tuning,
     );
+    const rendered_pallets: usize = 1 + if (stress_mode) stress_pallets.len else 0;
+    const submitted_renderables: usize = obstacles.len + 13 + rendered_pallets * 2;
+    const render_passes: usize = 10;
     const text = std.fmt.bufPrint(
         &game.debug_buffer,
-        "job={s}\ntime={d:.1}\npickup={}\ncarried={}\nangle={d:.0} depth={d:.1}\nfork_z={d:.0}",
+        "job={s}\ntime={d:.1}\npickup={}\ncarried={}\nangle={d:.0} depth={d:.1}\nfork_z={d:.0}\nframe={d:.1}ms\nsubmit={d}\npasses={d}",
         .{
             job_label,
             game.job_elapsed_seconds,
@@ -332,6 +465,9 @@ fn draw(game: *Game) void {
             pickup.angle_error_rad * 180.0 / std.math.pi,
             pickup.insertion_depth,
             vehicle.forkZ(game.forklift.fork_height),
+            game.fame_ms,
+            submitted_renderables,
+            render_passes,
         },
     ) catch unreachable;
 
@@ -371,4 +507,30 @@ fn palletFitsShelf(
         pallet.heading_rad,
         shelf.zone,
     );
+}
+
+fn rectMayBeVisible(
+    rect: collision.Rect,
+    camera_state: camera.Camera,
+) bool {
+    const bounds = camera.visibleWorldBounds(camera_state);
+
+    return rect.x + rect.width >=
+        bounds.min.x - render_cull_margin and
+        rect.x <= bounds.max.x + render_cull_margin and
+        rect.y + rect.height >=
+            bounds.min.y - render_cull_margin and
+        rect.y <= bounds.max.y + render_cull_margin;
+}
+
+fn palletMayBeVisible(
+    pallet: cargo.Pallet,
+    camera_state: camera.Camera,
+) bool {
+    return rectMayBeVisible(.{
+        .x = pallet.position.x - pallet.footprint.half_width,
+        .y = pallet.position.y - pallet.footprint.half_length,
+        .width = pallet.footprint.half_width * 2,
+        .height = pallet.footprint.half_length * 2,
+    }, camera_state);
 }

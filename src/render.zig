@@ -11,6 +11,62 @@ const collision = @import("collision.zig");
 
 const black: pdapi.LCDColor = @intCast(@intFromEnum(pdapi.LCDSolidColor.ColorBlack));
 
+pub const RenderStats = struct {
+    submitted: usize = 0,
+    culled: usize = 0,
+};
+
+pub const Renderer = struct {
+    playdate: *pdapi.PlaydateAPI,
+    camera_state: camera.Camera,
+    cull_margin: f32,
+    stats: RenderStats = .{},
+
+    pub fn init(
+        playdate: *pdapi.PlaydateAPI,
+        camera_state: camera.Camera,
+        cull_margin: f32,
+    ) Renderer {
+        return .{
+            .playdate = playdate,
+            .camera_state = camera_state,
+            .cull_margin = cull_margin,
+        };
+    }
+
+    fn acceptsRect(
+        self: *Renderer,
+        rect: collision.Rect,
+    ) bool {
+        const bounds = camera.visibleWorldBounds(self.camera_state);
+
+        const visible = rect.x + rect.width >= bounds.min.x - self.cull_margin and
+            rect.x <= bounds.max.x + self.cull_margin and
+            rect.y + rect.heigth >= bounds.min.y - self.cull_margin and
+            rect.y <= bounds.max.y + self.cull_margin;
+
+        if (visible) {
+            self.stats.submitted += 11;
+        } else {
+            self.stats.culled += 1;
+        }
+
+        return visible;
+    }
+
+    fn acceptsPallet(
+        self: *Renderer,
+        pallet: cargo.Pallet,
+    ) bool {
+        return self.acceptsRect(.{
+            .x = pallet.position.x - pallet.footprint.half_width,
+            .y = pallet.position.y - pallet.footprint.half_length,
+            .width = pallet.footprint.half_width * 2,
+            .height = pallet.footprint.half_length * 2,
+        });
+    }
+};
+
 pub fn drawWarehouse(
     playdate: *pdapi.PlaydateAPI,
     game: *main.Game,
@@ -199,12 +255,6 @@ pub fn drawPallet(
     camera_state: camera.Camera,
     color: pdapi.LCDColor,
 ) void {
-    const center = render25d.project(
-        pallet.position,
-        pallet.z,
-        camera_state,
-        render25d.default_tuning,
-    );
     const forward =
         math2.forwardVector(pallet.heading_rad);
     const right = math2.Vec2{
@@ -214,10 +264,39 @@ pub fn drawPallet(
     const front = math2.scale(forward, pallet.footprint.half_length);
     const side = math2.scale(right, pallet.footprint.half_width);
 
-    const front_left = math2.sub(math2.add(center, front), side);
-    const front_right = math2.add(math2.add(center, front), side);
-    const rear_left = math2.sub(math2.sub(center, front), side);
-    const rear_right = math2.add(math2.sub(center, front), side);
+    const front_left_world =
+        math2.sub(math2.add(pallet.position, front), side);
+    const front_right_world =
+        math2.add(math2.add(pallet.position, front), side);
+    const rear_left_world =
+        math2.sub(math2.sub(pallet.position, front), side);
+    const rear_right_world =
+        math2.add(math2.sub(pallet.position, front), side);
+
+    const front_left = render25d.project(
+        front_left_world,
+        pallet.z,
+        camera_state,
+        render25d.default_tuning,
+    );
+    const front_right = render25d.project(
+        front_right_world,
+        pallet.z,
+        camera_state,
+        render25d.default_tuning,
+    );
+    const rear_left = render25d.project(
+        rear_left_world,
+        pallet.z,
+        camera_state,
+        render25d.default_tuning,
+    );
+    const rear_right = render25d.project(
+        rear_right_world,
+        pallet.z,
+        camera_state,
+        render25d.default_tuning,
+    );
 
     line(playdate, front_left, front_right, 2, color);
     line(playdate, front_right, rear_right, 2, color);
@@ -231,12 +310,19 @@ pub fn drawPallet(
         3.0 * std.math.pi / 2.0,
     };
 
-    for (entry_turns) |turn| {
+    for (entry_turns, 0..) |turn, index| {
+        const entry_half_extent =
+            if (index % 2 == 0)
+                pallet.footprint.half_length
+            else
+                pallet.footprint.half_width;
+
         drawPalletEntryLanes(
             playdate,
-            center,
+            pallet,
             pallet.heading_rad + turn,
-            pallet.footprint.half_length,
+            entry_half_extent,
+            camera_state,
             color,
         );
     }
@@ -244,9 +330,10 @@ pub fn drawPallet(
 
 fn drawPalletEntryLanes(
     playdate: *pdapi.PlaydateAPI,
-    center: math2.Vec2,
+    pallet: cargo.Pallet,
     entry_heading_rad: f32,
-    half_length: f32,
+    entry_half_extent: f32,
+    camera_state: camera.Camera,
     color: pdapi.LCDColor,
 ) void {
     const forward = math2.forwardVector(entry_heading_rad);
@@ -254,13 +341,54 @@ fn drawPalletEntryLanes(
         .x = @cos(entry_heading_rad),
         .y = @sin(entry_heading_rad),
     };
-    const entry_start = math2.sub(center, math2.scale(forward, half_length));
-    const left_entry = math2.sub(entry_start, math2.scale(right, 5));
-    const right_entry = math2.add(entry_start, math2.scale(right, 5));
+    const entry_start = math2.sub(
+        pallet.position,
+        math2.scale(forward, entry_half_extent),
+    );
+    const left_entry = math2.sub(
+        entry_start,
+        math2.scale(right, 5),
+    );
+    const right_entry = math2.add(
+        entry_start,
+        math2.scale(right, 5),
+    );
     const entry_length = math2.scale(forward, 24);
 
-    line(playdate, left_entry, math2.add(left_entry, entry_length), 1, color);
-    line(playdate, right_entry, math2.add(right_entry, entry_length), 1, color);
+    line(
+        playdate,
+        render25d.project(
+            left_entry,
+            pallet.z,
+            camera_state,
+            render25d.default_tuning,
+        ),
+        render25d.project(
+            math2.add(left_entry, entry_length),
+            pallet.z,
+            camera_state,
+            render25d.default_tuning,
+        ),
+        1,
+        color,
+    );
+    line(
+        playdate,
+        render25d.project(
+            right_entry,
+            pallet.z,
+            camera_state,
+            render25d.default_tuning,
+        ),
+        render25d.project(
+            math2.add(right_entry, entry_length),
+            pallet.z,
+            camera_state,
+            render25d.default_tuning,
+        ),
+        1,
+        color,
+    );
 }
 
 pub fn drawPalletShadow(

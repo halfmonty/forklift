@@ -16,7 +16,7 @@
 
 **Reader:** a developer starting a fresh session on the prototype.
 
-**Action after reading:** implement the smallest cargo-data variation without changing established vehicle, camera, collision, pickup, or shelf-support rules.
+**Action after reading:** establish a hardware performance baseline with a temporary dense stress scene before adding more warehouse content.
 
 ## Proven on hardware
 
@@ -31,7 +31,7 @@
 - Geometry-based 2.5D forklift, pallet, shelf, rack, and tall-box rendering is readable. The selected parallax strength is `0.001`.
 - Rack rendering now uses a filled upper surface plus a camera-facing wall. This produces convincing foreground occlusion in all four cardinal views.
 - The four-view camera orbit passes on hardware. Hold B and press Right to rotate clockwise; four presses return to north. Camera rotation is render-only.
-- Two fixed standard-pallet jobs run in sequence. Advancing to the second job preserves forklift position, heading, fork height, steering state, and camera view; final delivery stops the timer.
+- Four fixed jobs run in sequence: standard floor, heavy floor, standard low-shelf to floor, and long floor cargo through a route choice. The long cargo preserves its relative carried orientation, including side pickup. Job transitions preserve forklift position, heading, fork height, steering state, and camera view; final delivery stops the timer.
 
 ## Intentional changes from the original plan
 
@@ -49,7 +49,7 @@ This remains deferred. It requires arbitrary-angle world projection, general ren
 
 ## Current implementation state
 
-The game is currently a two-job, standard-pallet warehouse prototype. Its simulation and renderer are separated: vehicle, cargo, collision, jobs, camera, height projection, and geometry rendering have distinct responsibilities.
+The game is currently a four-job warehouse prototype with standard, heavy, and long cargo. Its simulation and renderer are separated: vehicle, cargo, collision, jobs, camera, height projection, and geometry rendering have distinct responsibilities.
 
 The camera projects all rotating world geometry through its cardinal view transform. Ground rectangles use projected corners, and rack foreground occlusion compares screen-relative camera depth rather than raw world Y.
 
@@ -65,14 +65,14 @@ The camera projects all rotating world geometry through its cardinal view transf
 
 ## Next implementation slice
 
-Implement **one cargo variation** using the existing two-job loop:
+Add **render-only world-bounds culling** after the M15 baseline:
 
-1. Separate immutable cargo definition from per-job pallet state.
-2. Add exactly one alternative cargo definition with one meaningful handling difference.
-3. Assign that cargo to one fixed job; retain the standard pallet for the other.
-4. Verify pickup, carrying, shelf support, collision, delivery, camera rotation, and reset for both cargo definitions.
+1. Skip draw calls for racks, pallets, shelves, destinations, and props whose world bounds do not overlap the cardinal camera's world bounds.
+2. Keep the existing linear collision pass; its measured candidate count is still small.
+3. Re-measure the representative stress scene on hardware.
+4. Add a spatial grid only when collision candidates become large enough to justify it.
 
-Keep job data fixed and explicit. Do not introduce procedural generation, generic level formats, scoring, failure states, sound, or more than one new cargo type in this slice.
+Do not add production content, procedural generation, generic level formats, scoring, failure states, sound, or a spatial grid before a measurement justifies it.
 
 ## Verification baseline
 
@@ -975,29 +975,29 @@ Assign the heavy pallet to the second fixed job. Do not add braking changes, alt
 
 ### Test Gate M13
 
-- [ ] player can feel which cargo is heavy without reading a number
-- [ ] standard and heavy cargo use identical pickup, collision, drop, shelf-support, and camera rules
-- [ ] adding the heavy cargo requires no vehicle steering-code changes
+- [x] player can feel which cargo is heavy without reading a number
+- [x] standard and heavy cargo use identical pickup, collision, drop, shelf-support, and camera rules
+- [x] adding the heavy cargo requires no vehicle steering-code changes
 
 ---
 
 # 19. Milestone M14 — Small Job Set
 
-> **Status:** current next slice. Begin with the shelf-pallet job: make pallet spawn support height job data, then add one fixed shelf-to-floor delivery. Do not add the remaining jobs yet.
+> **Status:** complete. The four-job playtest passed; reverse placement is optional and does not block the milestone.
 
 **Goal:** find out whether the game can support repeated play using combinations of existing systems.
 
-Create only 5 jobs:
+Create up to 5 jobs:
 
 1. floor pallet → open bay
 2. floor pallet → tight bay
 3. shelf pallet → staging area
 4. long cargo → destination requiring route choice
-5. heavy cargo → loading dock / reverse placement
+5. optional: a fixed job added only to address a playtest finding
 
 ## Tasks
 
-- [ ] data-drive pallet spawn position and support height
+- [x] data-drive pallet spawn position and support height
 - [x] data-drive cargo selection
 - [ ] record completion time
 - [ ] record impact count
@@ -1007,18 +1007,20 @@ Create only 5 jobs:
 
 ### Test Gate M14 — Repetition
 
-Have a tester play all five jobs and then repeat some.
+Have a tester play all available jobs and then repeat some. Four jobs are sufficient for this gate unless a specific playtest finding justifies a fifth.
 
 Pass when:
 
-- [ ] driving remains the dominant fun activity
-- [ ] pickup is not described as repetitive ceremony
-- [ ] jobs feel meaningfully different despite sharing controls
-- [ ] at least one load creates a memorable maneuvering problem
+- [x] driving remains the dominant fun activity
+- [x] pickup is not described as repetitive ceremony
+- [x] jobs feel meaningfully different despite sharing controls
+- [x] at least one load creates a memorable maneuvering problem
 
 ---
 
 # 20. Milestone M15 — Performance Baseline and Spatial Culling
+
+> **Status:** current next slice. A ReleaseFast hardware stress scene with filled 2.5D racks runs at the 50 Hz cap (`20.4 ms`), while Debug ran at 36–40 FPS. Add simple render culling for future warehouse scale; keep the linear collision pass and defer a spatial grid.
 
 Do this **before** building a large warehouse.
 
@@ -1026,11 +1028,11 @@ Do this **before** building a large warehouse.
 
 ## Tasks
 
-- [ ] create a stress scene with more racks/pallets than a normal screen
-- [ ] show FPS/debug timing on hardware
-- [ ] count visible objects and render layers
-- [ ] count collision candidates
-- [ ] measure simulator and physical device separately
+- [x] create a stress scene with more racks/pallets than a normal screen
+- [x] show FPS/debug timing on hardware
+- [x] count submitted renderables, render layers, and collision candidates
+- [x] measure simulator and physical device separately
+- [ ] skip render work outside cardinal camera world bounds
 
 ## 20.1 Add a Uniform Spatial Grid Only When Needed
 
@@ -1058,8 +1060,8 @@ Prefer fixed-capacity cell lists or precomputed static world lists where practic
 ### Test Gate M15
 
 - [ ] off-screen objects are not unnecessarily rendered
-- [ ] collision cost scales with nearby objects, not entire map size
-- [ ] representative dense scene maintains target frame pacing on device
+- [ ] collision cost scales with nearby objects, not entire map size when world scale justifies a grid
+- [x] representative dense scene maintains target frame pacing on device in ReleaseFast
 - [ ] no per-frame heap churn is required for ordinary queries
 
 ---

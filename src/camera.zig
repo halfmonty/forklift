@@ -14,6 +14,23 @@ pub const Camera = struct {
     view: View = .north,
 };
 
+pub const WorldBounds = struct {
+    min: math2.Vec2,
+    max: math2.Vec2,
+};
+
+pub fn visibleWorldBounds(camera: Camera) WorldBounds {
+    const half = halfExtents(camera.view);
+
+    return .{
+        .min = camera.position,
+        .max = .{
+            .x = camera.position.x + half.x * 2,
+            .y = camera.position.y + half.y * 2,
+        },
+    };
+}
+
 pub fn follow(camera: *Camera, target: math2.Vec2) void {
     const half = halfExtents(camera.view);
 
