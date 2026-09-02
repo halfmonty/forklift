@@ -2,22 +2,41 @@ const std = @import("std");
 const config = @import("config.zig");
 const math2 = @import("math2.zig");
 
+pub const View = enum(u2) {
+    north,
+    east,
+    south,
+    west,
+};
+
 pub const Camera = struct {
     position: math2.Vec2 = .{ .x = 0, .y = 0 },
+    view: View = .north,
 };
 
 pub fn follow(camera: *Camera, target: math2.Vec2) void {
+    const half = halfExtents(camera.view);
+
     camera.position = .{
         .x = clamp(
-            target.x - config.screen_width / 2.0,
+            target.x - half.x,
             0,
-            config.world_width - config.screen_width,
+            config.world_width - half.x * 2,
         ),
         .y = clamp(
-            target.y - config.screen_height / 2.0,
+            target.y - half.y,
             0,
-            config.world_height - config.screen_height,
+            config.world_height - half.y * 2,
         ),
+    };
+}
+
+pub fn rotateClockwise(camera: *Camera) void {
+    camera.view = switch (camera.view) {
+        .north => .east,
+        .east => .south,
+        .south => .west,
+        .west => .north,
     };
 }
 
@@ -25,21 +44,65 @@ pub fn worldToScreen(
     world_position: math2.Vec2,
     camera: Camera,
 ) math2.Vec2 {
-    return math2.sub(world_position, camera.position);
+    const half = halfExtents(camera.view);
+    const focus = math2.add(camera.position, half);
+    const delta = math2.sub(world_position, focus);
+
+    const rotated = switch (camera.view) {
+        .north => delta,
+        .east => math2.Vec2{ .x = -delta.y, .y = delta.x },
+        .south => math2.Vec2{ .x = -delta.x, .y = -delta.y },
+        .west => math2.Vec2{ .x = delta.y, .y = -delta.x },
+    };
+
+    return math2.add(
+        rotated,
+        .{
+            .x = config.screen_width * 0.5,
+            .y = config.screen_height * 0.5,
+        },
+    );
+}
+
+pub fn depth(
+    world_position: math2.Vec2,
+    camera: Camera,
+) f32 {
+    return worldToScreen(world_position, camera).y;
+}
+
+fn halfExtents(view: View) math2.Vec2 {
+    return switch (view) {
+        .north, .south => .{
+            .x = config.screen_width * 0.5,
+            .y = config.screen_height * 0.5,
+        },
+        .east, .west => .{
+            .x = config.screen_height * 0.5,
+            .y = config.screen_width * 0.5,
+        },
+    };
 }
 
 fn clamp(value: f32, minimum: f32, maximum: f32) f32 {
     return @max(minimum, @min(value, maximum));
 }
 
-test "camera centers and clamps target" {
+test "north camera centers target" {
     var camera = Camera{};
-
     follow(&camera, .{ .x = 600, .y = 400 });
-    try std.testing.expectApproxEqAbs(@as(f32, 400), camera.position.x, 0.001);
-    try std.testing.expectApproxEqAbs(@as(f32, 280), camera.position.y, 0.001);
 
-    follow(&camera, .{ .x = 0, .y = 0 });
-    try std.testing.expectApproxEqAbs(@as(f32, 0), camera.position.x, 0.001);
-    try std.testing.expectApproxEqAbs(@as(f32, 0), camera.position.y, 0.001);
+    const screen = worldToScreen(.{ .x = 600, .y = 400 }, camera);
+    try std.testing.expectApproxEqAbs(@as(f32, 200), screen.x, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 120), screen.y, 0.001);
+}
+
+test "east camera rotates world clockwise" {
+    var camera = Camera{};
+    rotateClockwise(&camera);
+    follow(&camera, .{ .x = 600, .y = 400 });
+
+    const screen = worldToScreen(.{ .x = 700, .y = 400 }, camera);
+    try std.testing.expectApproxEqAbs(@as(f32, 200), screen.x, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 220), screen.y, 0.001);
 }

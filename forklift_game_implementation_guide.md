@@ -5,8 +5,78 @@
 > **Development rule:** every major feature should reach the smallest useful, testable form before the next layer of complexity is added.
 
 **Document status:** Working implementation roadmap  
-**Version:** 0.1  
+**Version:** 0.2
 **Priority:** prove fun and readability first; optimize and beautify only after the relevant mechanic passes its test gate.
+
+---
+
+# Current Project Status — 2026-09-02
+
+## Reader and restart action
+
+**Reader:** a developer starting a fresh session on the prototype.
+
+**Action after reading:** implement the smallest cargo-data variation without changing established vehicle, camera, collision, pickup, or shelf-support rules.
+
+## Proven on hardware
+
+- Persistent crank steering is controllable. Steering gain `0.25` and wheelbase `28` are the current validated handling values.
+- Straight driving remains possible at crank orientations `0°` and `180°`.
+- Forklift body collision uses an oriented rectangle and matches the rendered chassis more closely than the previous circle proxy.
+- Four-sided pallets can be picked up from all sides. Valid pickup attaches without a visible jump; carrying and dropping preserve alignment and heading.
+- Carried-pallet collision stops the pallet first, allows reverse recovery, and uses the pallet footprint rather than a circle.
+- A basic job completes when a pallet is placed in the marked destination; its timer stops on completion.
+- Discrete fork heights work: `floor = 0`, `carry = 12`, `rack_low = 30`. The mast is fixed and the carriage/forks move vertically.
+- Floor and low-shelf pickup/drop rules work. Shelf drops require full pallet support. Pallet shadows project at their support height, preserving the 2.5D illusion.
+- Geometry-based 2.5D forklift, pallet, shelf, rack, and tall-box rendering is readable. The selected parallax strength is `0.001`.
+- Rack rendering now uses a filled upper surface plus a camera-facing wall. This produces convincing foreground occlusion in all four cardinal views.
+- The four-view camera orbit passes on hardware. Hold B and press Right to rotate clockwise; four presses return to north. Camera rotation is render-only.
+- Two fixed standard-pallet jobs run in sequence. Advancing to the second job preserves forklift position, heading, fork height, steering state, and camera view; final delivery stops the timer.
+
+## Intentional changes from the original plan
+
+- Production Blender/sprite art is deferred indefinitely. The game uses a geometry-first 2.5D visual style implemented by the renderer. Do not begin an art pipeline unless this decision changes explicitly.
+- Pallets are deliberately four-sided to support positioning and cargo-rotation mechanics. Pickup lanes are available on every side.
+- Fork-height control uses D-pad Right to raise and D-pad Left to lower. A performs pickup; B performs drop. This replaces the original M12 A/B lift-control suggestion.
+- The camera supports four cardinal render-only views: north, east, south, and west. Hold B and press Right to rotate clockwise. World coordinates, forklift physics, collision, pickup, shelf support, and heading do not rotate.
+- Arbitrary-angle camera rotation, camera smoothing, camera look-ahead, POV, and zoom are deferred. The four cardinal views solve rack accessibility without adding those systems.
+
+## Desired future camera enhancement
+
+The desired eventual camera is continuously rotatable rather than limited to four cardinal views. The likely control is a held camera-modifier button plus crank rotation; the specific modifier button is intentionally undecided so it does not conflict with established driving, pickup, drop, or fork-height controls.
+
+This remains deferred. It requires arbitrary-angle world projection, general render ordering, and rack top/side-face selection that remain correct at every yaw angle. It must stay render-only: camera rotation must never rotate or alter world-space physics, collision, pickup rules, cargo support, or vehicle heading.
+
+## Current implementation state
+
+The game is currently a two-job, standard-pallet warehouse prototype. Its simulation and renderer are separated: vehicle, cargo, collision, jobs, camera, height projection, and geometry rendering have distinct responsibilities.
+
+The camera projects all rotating world geometry through its cardinal view transform. Ground rectangles use projected corners, and rack foreground occlusion compares screen-relative camera depth rather than raw world Y.
+
+## Camera-orbit completion gate
+
+**Status:** complete on hardware.
+
+- Left alone lowers forks; Right alone raises forks.
+- Hold B and press Right to rotate one step clockwise; four presses return to north.
+- Movement, steering, collision, pickup, drop, shelf support, and job completion are identical in every view.
+- A near-side forklift/pallet renders in front of the rack; a far-side forklift/pallet is occluded by the rack upper surface and foreground wall in every view.
+- No rotation behavior modifies world-space state.
+
+## Next implementation slice
+
+Implement **one cargo variation** using the existing two-job loop:
+
+1. Separate immutable cargo definition from per-job pallet state.
+2. Add exactly one alternative cargo definition with one meaningful handling difference.
+3. Assign that cargo to one fixed job; retain the standard pallet for the other.
+4. Verify pickup, carrying, shelf support, collision, delivery, camera rotation, and reset for both cargo definitions.
+
+Keep job data fixed and explicit. Do not introduce procedural generation, generic level formats, scoring, failure states, sound, or more than one new cargo type in this slice.
+
+## Verification baseline
+
+Run host tests for camera, 2.5D projection, vehicle, cargo, and collision, then build the game. Validate the orbit and job loop on physical hardware; simulator results do not substitute for crank/control feel.
 
 ---
 
@@ -786,7 +856,9 @@ The forklift should be able to pass behind the appropriate foreground parts whil
 
 # 16. Milestone M11 — First Real Art Pipeline
 
-Only now should Blender/pre-rendered production art become a significant task.
+> **Current decision:** superseded for this prototype. Geometry-based 2.5D rendering is the selected art direction. Keep the renderer geometry-first and do not start the Blender/sprite pipeline unless the project explicitly revisits this decision.
+
+Original plan (superseded): Blender/pre-rendered production art would become a significant task here.
 
 **Goal:** replace one graybox scene with representative final-style assets without changing simulation.
 
@@ -842,6 +914,8 @@ A screenshot/video from the representative scene should answer:
 
 # 17. Milestone M12 — Fork Height and Rack Shelf
 
+> **Status:** complete. The implementation uses D-pad Right/Left for discrete raise/lower, A for pickup, and B for drop. The three validated heights are `floor = 0`, `carry = 12`, and `rack_low = 30`.
+
 **Goal:** add vertical gameplay only after the renderer can communicate it.
 
 Start with discrete useful heights:
@@ -858,20 +932,19 @@ Internally this can map to numeric Z values.
 
 ## Tasks
 
-- [ ] A cycles/raises toward the next useful state or raises while held, depending on preferred control feel.
-- [ ] B lowers similarly.
-- [ ] Add one rack shelf support Z.
-- [ ] Add one pallet on shelf.
-- [ ] Pickup validates vertical fork range.
-- [ ] Placement validates shelf support height.
-- [ ] Lifted pallet shadow/offset visibly matches its Z.
+- [x] D-pad Right raises toward the next useful state; D-pad Left lowers.
+- [x] Add one rack shelf support Z.
+- [x] Add one pallet on shelf.
+- [x] Pickup validates vertical fork range.
+- [x] Placement validates shelf support height.
+- [x] Lifted pallet shadow/offset visibly matches its Z.
 
 ### Test Gate M12
 
-- [ ] player can identify correct fork height from overhead
-- [ ] shelf pickup works without a POV camera
-- [ ] vertical mistakes are understandable rather than mysterious
-- [ ] discrete heights feel sufficient for gameplay
+- [x] player can identify correct fork height from overhead
+- [x] shelf pickup works without a POV camera
+- [x] vertical mistakes are understandable rather than mysterious
+- [x] discrete heights feel sufficient for gameplay
 
 If exact continuous fork height provides no extra fun, keep discrete states.
 
@@ -879,40 +952,38 @@ If exact continuous fork height provides no extra fun, keep discrete states.
 
 # 18. Milestone M13 — Cargo Data and First Variation
 
+> **Status:** complete. Standard and heavy pallets have identical interaction rules; the heavy pallet uses carried acceleration multiplier `0.45`, validated on hardware.
+
 **Goal:** prove that cargo type can change gameplay without adding bespoke logic everywhere.
 
 ## 18.1 Separate Pallet From Cargo
 
 ```zig
 pub const CargoDef = struct {
-    footprint: Vec2,
-    height: f32,
-    mass_multiplier: f32,
-    flags: CargoFlags,
-    visual_id: CargoVisualId,
+    carried_acceleration_multiplier: f32,
 };
 ```
 
-The pallet owns or references a cargo definition.
+The per-job pallet state owns a copied cargo definition. Keep the existing pallet footprint, height, pickup lanes, and renderer unchanged for this first variation.
 
-## First Three Cargo Types
+## First Cargo Variation
 
-1. **Standard boxes** — baseline.
-2. **Heavy machine** — slower acceleration/braking.
-3. **Long silly load** — exaggerated front/side footprint; visually memorable.
+1. **Standard pallet** — existing baseline multiplier.
+2. **Heavy pallet** — reduced carried acceleration only.
 
-Do not add fragility until these are proven.
+Assign the heavy pallet to the second fixed job. Do not add braking changes, altered geometry, fragility, special pickup rules, or visual variants in this slice.
 
 ### Test Gate M13
 
 - [ ] player can feel which cargo is heavy without reading a number
-- [ ] long cargo forces a different route or turn strategy
-- [ ] visual complexity is independent from physical proxy complexity
-- [ ] adding a new cargo definition does not require modifying vehicle steering code
+- [ ] standard and heavy cargo use identical pickup, collision, drop, shelf-support, and camera rules
+- [ ] adding the heavy cargo requires no vehicle steering-code changes
 
 ---
 
 # 19. Milestone M14 — Small Job Set
+
+> **Status:** current next slice. Begin with the shelf-pallet job: make pallet spawn support height job data, then add one fixed shelf-to-floor delivery. Do not add the remaining jobs yet.
 
 **Goal:** find out whether the game can support repeated play using combinations of existing systems.
 
@@ -926,8 +997,8 @@ Create only 5 jobs:
 
 ## Tasks
 
-- [ ] data-drive pickup and destination IDs
-- [ ] data-drive cargo selection
+- [ ] data-drive pallet spawn position and support height
+- [x] data-drive cargo selection
 - [ ] record completion time
 - [ ] record impact count
 - [ ] record placement quality only if it is easy to calculate/read

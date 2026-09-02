@@ -1,6 +1,7 @@
 const std = @import("std");
 const math2 = @import("math2.zig");
 const vehicle = @import("vehicle.zig");
+const config = @import("config.zig");
 
 pub const PalletState = enum {
     floor,
@@ -10,6 +11,18 @@ pub const PalletState = enum {
 pub const Footprint = struct {
     half_length: f32 = 14,
     half_width: f32 = 14,
+};
+
+pub const CargoDef = struct {
+    carried_acceleration_multiplier: f32,
+};
+
+pub const standard_cargo = CargoDef{
+    .carried_acceleration_multiplier = config.carried_acceleration_multiplier,
+};
+
+pub const heavy_cargo = CargoDef{
+    .carried_acceleration_multiplier = 0.45,
 };
 
 pub const Pallet = struct {
@@ -23,7 +36,9 @@ pub const Pallet = struct {
     carry_offset: math2.Vec2 = .{ .x = 0, .y = 0 },
     footprint: Footprint = .{},
     z: f32 = 0,
+    support_z: f32 = 0,
     carry_z: f32 = 12,
+    cargo: CargoDef = standard_cargo,
 };
 
 pub const PickupTuning = struct {
@@ -142,6 +157,7 @@ pub fn tryPickup(
     };
     pallet.state = .carried;
     pallet.z = pallet.carry_z;
+    pallet.support_z = 0;
     return true;
 }
 
@@ -167,8 +183,13 @@ pub fn followForks(
 }
 
 pub fn drop(pallet: *Pallet) void {
+    dropAt(pallet, 0);
+}
+
+pub fn dropAt(pallet: *Pallet, support_z: f32) void {
     pallet.state = .floor;
-    pallet.z = 0;
+    pallet.support_z = support_z;
+    pallet.z = support_z;
 }
 
 fn forkAnchor(forklift: vehicle.Forklift) math2.Vec2 {

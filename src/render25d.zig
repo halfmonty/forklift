@@ -3,6 +3,12 @@ const camera = @import("camera.zig");
 const math2 = @import("math2.zig");
 const config = @import("config.zig");
 
+pub const default_tuning = ProjectionTuning{
+    .z_skew_x = 0,
+    .z_skew_y = 0.75,
+    .perspective_strength = 0.001,
+};
+
 pub const ProjectionTuning = struct {
     z_skew_x: f32,
     z_skew_y: f32,
@@ -15,10 +21,10 @@ pub fn project(
     camera_state: camera.Camera,
     tuning: ProjectionTuning,
 ) math2.Vec2 {
-    const ground = math2.Vec2{
-        .x = world_position.x - camera_state.position.x,
-        .y = world_position.y - camera_state.position.y,
-    };
+    const ground = camera.worldToScreen(
+        world_position,
+        camera_state,
+    );
     const perspective_scale = z * tuning.perspective_strength;
     return .{
         .x = ground.x +

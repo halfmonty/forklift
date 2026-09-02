@@ -1,6 +1,13 @@
 const std = @import("std");
 const cargo = @import("cargo.zig");
 const collision = @import("collision.zig");
+const math2 = @import("math2.zig");
+
+pub const JobDefinition = struct {
+    pallet_spawn: math2.Vec2,
+    destination: collision.Rect,
+    cargo: cargo.CargoDef,
+};
 
 pub const JobState = enum {
     waiting_for_pickup,

@@ -33,11 +33,38 @@ pub const InputState = struct {
     reverse: bool,
 };
 
+pub const ForkHeight = enum(c_int) {
+    floor = 0,
+    carry = 12,
+    rack_low = 30,
+};
+
+pub fn forkZ(height: ForkHeight) f32 {
+    return @floatFromInt(@intFromEnum(height));
+}
+
+pub fn raiseForks(forklift: *Forklift) void {
+    forklift.fork_height = switch (forklift.fork_height) {
+        .floor => .carry,
+        .carry => .rack_low,
+        .rack_low => .rack_low,
+    };
+}
+
+pub fn lowerForks(forklift: *Forklift) void {
+    forklift.fork_height = switch (forklift.fork_height) {
+        .floor => .floor,
+        .carry => .floor,
+        .rack_low => .carry,
+    };
+}
+
 pub const Forklift = struct {
     position: math2.Vec2,
     heading_rad: f32 = 0,
     steer_angle_rad: f32 = 0,
     speed: f32 = 0,
+    fork_height: ForkHeight = .floor,
 
     pub fn reset(self: *Forklift, position: math2.Vec2) void {
         self.* = .{ .position = position };
