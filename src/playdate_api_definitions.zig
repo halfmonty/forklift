@@ -827,7 +827,7 @@ pub const PlaydateSoundSequence = extern struct {
     setTime: *const fn (seq: ?*SoundSequence, time: u32) callconv(.c) void,
     setLoops: *const fn (seq: ?*SoundSequence, loopstart: c_int, loopend: c_int, loops: c_int) callconv(.c) void,
     getTempo_deprecated: *const fn (seq: ?*SoundSequence) callconv(.c) c_int,
-    setTempo: *const fn (seq: ?*SoundSequence, stepsPerSecond: c_int) callconv(.c) void,
+    setTempo: *const fn (seq: ?*SoundSequence, stepsPerSecond: f32) callconv(.c) void,
     getTrackCount: *const fn (seq: ?*SoundSequence) callconv(.c) c_int,
     addTrack: *const fn (seq: ?*SoundSequence) callconv(.c) ?*SequenceTrack,
     getTrackAtIndex: *const fn (seq: ?*SoundSequence, track: c_uint) callconv(.c) ?*SequenceTrack,

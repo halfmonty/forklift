@@ -5,8 +5,6 @@ const camera = @import("camera.zig");
 const math2 = @import("math2.zig");
 const render25d = @import("render25d.zig");
 const cargo = @import("cargo.zig");
-const main = @import("main.zig");
-const config = @import("config.zig");
 const collision = @import("collision.zig");
 
 const black: pdapi.LCDColor = @intCast(@intFromEnum(pdapi.LCDSolidColor.ColorBlack));
@@ -34,51 +32,97 @@ pub const Renderer = struct {
         };
     }
 
-    fn acceptsRect(
-        self: *Renderer,
-        rect: collision.Rect,
-    ) bool {
+    fn acceptsRect(self: *Renderer, rect: collision.Rect) bool {
         const bounds = camera.visibleWorldBounds(self.camera_state);
-
         const visible = rect.x + rect.width >= bounds.min.x - self.cull_margin and
             rect.x <= bounds.max.x + self.cull_margin and
-            rect.y + rect.heigth >= bounds.min.y - self.cull_margin and
+            rect.y + rect.height >= bounds.min.y - self.cull_margin and
             rect.y <= bounds.max.y + self.cull_margin;
 
         if (visible) {
-            self.stats.submitted += 11;
+            self.stats.submitted += 1;
         } else {
             self.stats.culled += 1;
         }
-
         return visible;
     }
 
-    fn acceptsPallet(
-        self: *Renderer,
-        pallet: cargo.Pallet,
-    ) bool {
+    fn acceptsPoint(self: *Renderer, point: math2.Vec2) bool {
         return self.acceptsRect(.{
-            .x = pallet.position.x - pallet.footprint.half_width,
-            .y = pallet.position.y - pallet.footprint.half_length,
-            .width = pallet.footprint.half_width * 2,
-            .height = pallet.footprint.half_length * 2,
+            .x = point.x,
+            .y = point.y,
+            .width = 0,
+            .height = 0,
         });
     }
-};
 
-pub fn drawWarehouse(
-    playdate: *pdapi.PlaydateAPI,
-    game: *main.Game,
-) void {
-    playdate.graphics.drawRect(
-        @intFromFloat(-game.camera.position.x),
-        @intFromFloat(-game.camera.position.y),
-        @intFromFloat(config.world_width),
-        @intFromFloat(config.world_height),
-        black,
-    );
-}
+    fn acceptsPallet(self: *Renderer, pallet_data: cargo.Pallet) bool {
+        return self.acceptsRect(.{
+            .x = pallet_data.position.x - pallet_data.footprint.half_width,
+            .y = pallet_data.position.y - pallet_data.footprint.half_length,
+            .width = pallet_data.footprint.half_width * 2,
+            .height = pallet_data.footprint.half_length * 2,
+        });
+    }
+
+    pub fn tallBox(self: *Renderer, position: math2.Vec2) void {
+        if (!self.acceptsPoint(position)) return;
+        drawTallBox(self.playdate, position, self.camera_state, black);
+    }
+
+    pub fn rackBack(self: *Renderer, rack: collision.Rect) void {
+        if (!self.acceptsRect(rack)) return;
+        drawRackBack(self.playdate, rack, self.camera_state, black);
+    }
+
+    pub fn rackFront(self: *Renderer, rack: collision.Rect) void {
+        if (!self.acceptsRect(rack)) return;
+        drawRackFront(self.playdate, rack, self.camera_state, black);
+    }
+
+    pub fn rackFrontDepth(self: Renderer, rack: collision.Rect) f32 {
+        return rackFrontDepthRaw(rack, self.camera_state);
+    }
+
+    pub fn obstacle(self: *Renderer, obstacle_rect: collision.Rect) void {
+        if (!self.acceptsRect(obstacle_rect)) return;
+        drawObstacle(self.playdate, obstacle_rect, self.camera_state, black);
+    }
+
+    pub fn destination(self: *Renderer, zone: collision.Rect) void {
+        if (!self.acceptsRect(zone)) return;
+        drawDestination(self.playdate, zone, self.camera_state, black);
+    }
+
+    pub fn cone(self: *Renderer, position: math2.Vec2) void {
+        if (!self.acceptsPoint(position)) return;
+        drawCone(self.playdate, position, self.camera_state, black);
+    }
+
+    pub fn shelf(
+        self: *Renderer,
+        zone: collision.Rect,
+        support_z: f32,
+    ) void {
+        if (!self.acceptsRect(zone)) return;
+        drawShelf(self.playdate, zone, support_z, self.camera_state, black);
+    }
+
+    pub fn palletShadow(self: *Renderer, pallet_data: cargo.Pallet) void {
+        if (!self.acceptsPallet(pallet_data)) return;
+        drawPalletShadow(self.playdate, pallet_data, self.camera_state, black);
+    }
+
+    pub fn pallet(self: *Renderer, pallet_data: cargo.Pallet) void {
+        if (!self.acceptsPallet(pallet_data)) return;
+        drawPallet(self.playdate, pallet_data, self.camera_state, black);
+    }
+
+    pub fn forklift(self: *Renderer, forklift_data: vehicle.Forklift) void {
+        self.stats.submitted += 1;
+        drawForklift(self.playdate, forklift_data, self.camera_state);
+    }
+};
 
 pub fn drawForklift(
     playdate: *pdapi.PlaydateAPI,
@@ -690,7 +734,7 @@ fn rackFrontEdge(
     };
 }
 
-pub fn rackFrontDepth(
+fn rackFrontDepthRaw(
     rack: collision.Rect,
     camera_state: camera.Camera,
 ) f32 {

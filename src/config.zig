@@ -1,4 +1,3 @@
-pub const steering_gain: f32 = 0.25;
 pub const wheelbase: f32 = 28.0;
 pub const acceleration: f32 = 100.0;
 pub const braking: f32 = 240.0;

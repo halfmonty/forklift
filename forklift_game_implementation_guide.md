@@ -5,22 +5,22 @@
 > **Development rule:** every major feature should reach the smallest useful, testable form before the next layer of complexity is added.
 
 **Document status:** Working implementation roadmap  
-**Version:** 0.2
+**Version:** 0.3
 **Priority:** prove fun and readability first; optimize and beautify only after the relevant mechanic passes its test gate.
 
 ---
 
-# Current Project Status — 2026-09-02
+# Current Project Status — 2026-09-05
 
 ## Reader and restart action
 
 **Reader:** a developer starting a fresh session on the prototype.
 
-**Action after reading:** establish a hardware performance baseline with a temporary dense stress scene before adding more warehouse content.
+**Action after reading:** hardware-validate M17a system-menu restart and the Low/Medium/High steering ratios, then implement M17b campaign flow before creating M18 content.
 
 ## Proven on hardware
 
-- Persistent crank steering is controllable. Steering gain `0.25` and wheelbase `28` are the current validated handling values.
+- Persistent crank steering is controllable. Wheelbase `28` is hardware validated. M17a adds selectable `Low` (3:1), `Medium` (2:1), and `High` (1:1) crank-to-wheel ratios; hardware selection of the final default remains pending.
 - Straight driving remains possible at crank orientations `0°` and `180°`.
 - Forklift body collision uses an oriented rectangle and matches the rendered chassis more closely than the previous circle proxy.
 - Four-sided pallets can be picked up from all sides. Valid pickup attaches without a visible jump; carrying and dropping preserve alignment and heading.
@@ -32,6 +32,13 @@
 - Rack rendering now uses a filled upper surface plus a camera-facing wall. This produces convincing foreground occlusion in all four cardinal views.
 - The four-view camera orbit passes on hardware. Hold B and press Right to rotate clockwise; four presses return to north. Camera rotation is render-only.
 - Four fixed jobs run in sequence: standard floor, heavy floor, standard low-shelf to floor, and long floor cargo through a route choice. The long cargo preserves its relative carried orientation, including side pickup. Job transitions preserve forklift position, heading, fork height, steering state, and camera view; final delivery stops the timer.
+- A compile-time static level owns static object collision and before/after-actor rendering. The renderer owns cardinal world-bounds culling; it remains separate from world-space physics.
+- A representative dense 2.5D stress scene sustains the 50 Hz device cap in ReleaseFast. A spatial grid remains deferred until map scale makes linear collision queries expensive.
+- Native Playdate-synth pallet engagement feedback passes hardware validation: exactly one clunk per successful pickup, silence for failed attempts, no stuck/repeating sound, and acceptable volume.
+- The native four-track music loop maintains the device's 50 Hz cap and the same tempo on simulator and hardware during normal driving.
+- Native pickup and fork-height effects mix with the four-track music loop at the 50 Hz cap. Successful pickups produce one effect, failed attempts are silent, and effect volume is acceptable.
+- The fork-height effect's native one-shot pitch sweep passes hardware validation during music, does not alter pickup sound, and has no frame-rate impact.
+- PDNA Toolkit song export was copied into the Zig project and runs on hardware at the 50 Hz cap with no frame-rate impact.
 
 ## Intentional changes from the original plan
 
@@ -49,7 +56,7 @@ This remains deferred. It requires arbitrary-angle world projection, general ren
 
 ## Current implementation state
 
-The game is currently a four-job warehouse prototype with standard, heavy, and long cargo. Its simulation and renderer are separated: vehicle, cargo, collision, jobs, camera, height projection, and geometry rendering have distinct responsibilities.
+The game is currently a four-job warehouse prototype with standard, heavy, and long cargo. Its simulation and renderer are separated: vehicle, cargo, collision, jobs, static level, camera, height projection, and geometry rendering have distinct responsibilities.
 
 The camera projects all rotating world geometry through its cardinal view transform. Ground rectangles use projected corners, and rack foreground occlusion compares screen-relative camera depth rather than raw world Y.
 
@@ -65,14 +72,14 @@ The camera projects all rotating world geometry through its cardinal view transf
 
 ## Next implementation slice
 
-Add **render-only world-bounds culling** after the M15 baseline:
+Complete the M17a device gate, then implement M17b campaign flow:
 
-1. Skip draw calls for racks, pallets, shelves, destinations, and props whose world bounds do not overlap the cardinal camera's world bounds.
-2. Keep the existing linear collision pass; its measured candidate count is still small.
-3. Re-measure the representative stress scene on hardware.
-4. Add a spatial grid only when collision candidates become large enough to justify it.
+1. Validate `Restart Job` from every current job, including while carrying.
+2. Compare Low, Medium, and High steering ratios on the existing hardware course; choose the default from that test.
+3. Add the title, briefing, shift-results, promotion, and final-completion states around the existing job loop.
+4. Save only completed-shift campaign progression. M18 will then author training and warehouse content against this foundation.
 
-Do not add production content, procedural generation, generic level formats, scoring, failure states, sound, or a spatial grid before a measurement justifies it.
+Do not expand audio, add a custom pause screen, create a generic runtime level format, procedural generation, failure states, a spatial grid, or future game modes in this slice.
 
 ## Verification baseline
 
@@ -1020,7 +1027,7 @@ Pass when:
 
 # 20. Milestone M15 — Performance Baseline and Spatial Culling
 
-> **Status:** current next slice. A ReleaseFast hardware stress scene with filled 2.5D racks runs at the 50 Hz cap (`20.4 ms`), while Debug ran at 36–40 FPS. Add simple render culling for future warehouse scale; keep the linear collision pass and defer a spatial grid.
+> **Status:** complete for the current prototype. A ReleaseFast hardware stress scene with filled 2.5D racks runs at the 50 Hz cap (`20.4 ms`), and renderer-owned cardinal world-bounds culling is hardware-validated. Keep the linear collision pass; defer a spatial grid until future map scale justifies it.
 
 Do this **before** building a large warehouse.
 
@@ -1032,7 +1039,7 @@ Do this **before** building a large warehouse.
 - [x] show FPS/debug timing on hardware
 - [x] count submitted renderables, render layers, and collision candidates
 - [x] measure simulator and physical device separately
-- [ ] skip render work outside cardinal camera world bounds
+- [x] skip render work outside cardinal camera world bounds
 
 ## 20.1 Add a Uniform Spatial Grid Only When Needed
 
@@ -1059,49 +1066,249 @@ Prefer fixed-capacity cell lists or precomputed static world lists where practic
 
 ### Test Gate M15
 
-- [ ] off-screen objects are not unnecessarily rendered
+- [x] off-screen objects are not unnecessarily rendered
 - [ ] collision cost scales with nearby objects, not entire map size when world scale justifies a grid
 - [x] representative dense scene maintains target frame pacing on device in ReleaseFast
-- [ ] no per-frame heap churn is required for ordinary queries
+- [x] no per-frame heap churn is required for ordinary queries
 
 ---
 
-# 21. Milestone M16 — Audio and Mechanical Feedback
+# 21. Milestone M16 — Native-Synth Audio and Mechanical Feedback
+
+> **Status:** The realtime ZzFX/ZzFXM experiment is removed. Six custom generator music voices reduced the game to roughly 1 FPS, and ZzFX effects reduced frame rate to roughly 20 FPS while native music played. Four native music tracks and two native effect voices pass hardware validation. PDNA Toolkit song export has also passed hardware playback at the 50 Hz cap. Next: plan and spike the bounded native-expression v2 contract before changing adapters or toolkit exports.
 
 Add audio only after the loop works, but before broad content production because feedback can materially change feel.
 
-## Audio MVP
+## Native-Synth Effect Experiment
 
-- [ ] motor/rolling loop or simple speed-dependent motor sound
+- [x] `audio.zig` owns a fixed pool of two to four pre-created native `PDSynth` voices
+- [x] effects are static Zig presets for waveform, ADSR, pitch, velocity, duration, and volume
+- [x] a preset is played through a reusable voice; ordinary play does not allocate
+- [x] pallet engagement `clunk` fires only after a successful pickup
+
+The temporary experiment uses Playdate-native waveforms and envelopes. The ZzFX-compatible path below deliberately uses a custom generator inside `PDSynth`; it must stay fixed-voice, allocation-free during playback, and narrowly scoped to ZzFX recipe rendering.
+
+## Native Effect Presets
+
+Effects use the same native waveform, ADSR, MIDI pitch, velocity, duration, and volume contract as music. A fixed pool of two PDSynth voices is reused; effect playback has no custom per-sample renderer or ordinary-play allocation.
+
+- [x] two native effect voices are separate from the four native music voices
+- [x] pallet engagement maps to a short native noise preset
+- [x] fork-height movement maps to a short native triangle preset
+- [x] native pickup and fork effects mix correctly with music on hardware
+- [x] each reusable effect voice owns a preallocated native LFO for optional pitch sweep
+- [x] fork-height pitch sweep passes hardware validation with music
+
+## Later Mechanical Presets
+
 - [ ] hydraulic raise/lower sound
-- [ ] pallet engagement `clunk`
 - [ ] metal collision sound
 - [ ] job completion sound
+- [ ] motor/rolling loop or simple speed-dependent motor sound
 
 Optional early test:
 
 - [ ] subtle steering mechanical tick tied to crank delta
 
+## Native Four-Track Music
+
+Music uses the Playdate-native synth and sequencer rather than the custom ZzFX generator. Each track is monophonic; the initial four voices are square lead, square harmony/arpeggio, triangle bass, and noise percussion. Music notes are static Zig data. The SDK owns waveform generation, envelopes, and scheduled playback.
+
+- [x] four monophonic native music voices are separate from two native effect voices
+- [x] each native voice has an explicit waveform, ADSR, and volume
+- [x] static Zig note data populates a four-track native `SoundSequence`
+- [x] sequence playback loops without game-loop timing or custom per-sample rendering
+- [ ] music plays on hardware without stealing, muting, or delaying simultaneous effects
+
+Do not build a tracker, parser, converter, generic music format, custom generator, or generic mixer.
+
 ### Test Gate M16
 
-- [ ] pickup can be confirmed by sound without staring at HUD
-- [ ] collision severity is understandable
-- [ ] sound does not become irritating during repeated maneuvering
+- [x] pickup can be confirmed by sound without staring at HUD
+- [x] repeated successful pickups do not fail, leak voices, or become irritating
+- [x] ordinary effect playback performs no allocation and keeps voice ownership bounded
+- [x] native pickup effects remain distinct and pleasant during music
+- [x] native fork effects remain distinct and pleasant during music
+- [ ] four-track native music tempo remains stable during normal driving and camera orbit
+- [x] native music does not steal, mute, or delay simultaneous pallet/fork effects
+- [ ] collision severity is understandable after the collision preset is added
+- [ ] any music loop is tested separately on hardware after the effect gate passes
 
 ---
 
-# 22. Milestone M17 — Save, Pause, and Settings
+# 22. Milestone M17 — System Menu Restart and Steering Ratio
+
+> **M17a scope:** use the Playdate system menu; do not build a redundant in-game pause state or pause overlay. The system menu already pauses the game and supports up to three project menu items.
 
 Do not build progression persistence before there is progression worth saving.
 
-## MVP
+## M17a — Native system-menu controls
 
-- [ ] pause/system menu behaves safely
-- [ ] restart job
-- [ ] steering sensitivity/ratio setting
-- [ ] optional steering-angle indicator setting
-- [ ] save unlocked job/level progression
-- [ ] save best score/time only after scoring stabilizes
+1. Add a `Restart Job` item with `system.addMenuItem`.
+2. Its callback sets a pending restart request only. The normal update path consumes that request and restores the current job's authored initial state: job index, pallet/load state, forklift position and heading, speed, steering state, fork height, camera view, timer, and destination state.
+3. Add a `Steering Ratio` option item with `system.addOptionsMenuItem` and exactly three labels: `Low`, `Medium`, and `High`.
+4. Map the selected setting only at crank-input-to-wheel-steering conversion:
+
+   | Setting | Crank rotations : wheel rotations | Wheel-angle multiplier |
+   | --- | --- | --- |
+   | Low | 3:1 | `1.0 / 3.0` |
+   | Medium | 2:1 | `1.0 / 2.0` |
+   | High | 1:1 | `1.0` |
+
+   The setting must not alter vehicle geometry, speed, collision, cargo, camera behavior, or world coordinates.
+5. Default to `Medium` (2:1). Do not silently retune the selected baseline while adding menu plumbing; change the default only after the M17a hardware comparison.
+6. Keep the selected ratio in session state only for M17a. Persistence is a later, separate decision.
+
+### Hardware gate
+
+- Opening the system menu pauses safely; no custom pause UI exists.
+- `Restart Job` works from every fixed job and does not leave carrying, timer, audio, or camera state stale.
+- Each steering option is selectable from the system menu and changes only steering responsiveness.
+- Low, Medium, and High are each driven through the existing slalom, tight turn, and reverse-recovery course on hardware. Record the preferred default after that test.
+
+## M17b — Campaign, Shift, and Progression Foundation
+
+### Reader and action
+
+**Reader:** an engineer preparing M18 stages, shifts, jobs, and tutorial content.
+
+**Action after reading:** implement campaign flow around the existing delivery simulation so authored content can define a stage, its shifts, their jobs, boss briefings, scoring targets, and promotion outcome without changing core vehicle, cargo, collision, or renderer rules.
+
+### Goal and player-facing loop
+
+`Forklift Certified` is a forklift-operator campaign:
+
+```text
+Title → Continue Main Game → boss briefing → shift jobs → shift results
+      → next shift | stage promotion → next stage → campaign complete
+```
+
+- A **job** is one existing pickup-and-delivery objective.
+- A **shift** is an ordered, mandatory list of jobs in one warehouse stage. Completing a job starts only the next job in that shift.
+- A **stage** is one warehouse, its fixed layout, theme, obstacle vocabulary, and ordered shifts.
+- A **campaign** is the ordered list of stages.
+
+The title screen initially has one selectable action: `Continue Main Game`. With no completed-shift save, it starts the first training shift. With a save, it starts the next unlocked, unfinished shift. Do not add a future-game-mode abstraction yet.
+
+The first stage is the **Training Facility**. Its early shifts are tutorials: boss messages introduce movement, steering ratio, camera orbit, fork height, pickup, carrying, shelves, heavy cargo, long cargo, and route planning only when each concept first becomes relevant. Completing every Training Facility shift shows the promotion reward **Forklift Certified** and unlocks the first real warehouse stage. Each later stage must introduce a distinct warehouse theme and at least one obstacle or handling challenge not already taught. Completing the final stage shows a campaign-complete/win screen.
+
+### Authored data boundary
+
+Campaign flow is static authored data. It does not introduce runtime map loading or a generic level format. A stage selects one compile-time static warehouse level through its stage identity; stage metadata selects its shifts and presentation.
+
+Each authored shift needs:
+
+```zig
+pub const ShiftDefinition = struct {
+    id: ShiftId,
+    stage_id: StageId,
+    title: []const u8,
+    jobs: []const JobDefinition,
+    briefings: []const BossMessage,
+    scoring: ShiftScoring,
+};
+
+pub const BossMessage = struct {
+    trigger: BriefingTrigger,
+    pages: []const []const u8,
+};
+
+pub const BriefingTrigger = union(enum) {
+    shift_start,
+    before_job: usize,
+};
+
+pub const ShiftScoring = struct {
+    completion_points: u32,
+    target_time_seconds: f32,
+    time_bonus_per_second: u32,
+    collision_penalty: u32,
+};
+```
+
+`StageDefinition` contains a stable identity, display name, ordered shift identities, and `promotion_pages`. `CampaignDefinition` contains the ordered stage identities and `campaign_complete_pages`. Promotion and final pages use the same Boss text-box presentation after a stage or campaign completes. Keep IDs stable after release because saves use them; display text is not an identifier.
+
+`JobDefinition` remains the atomic cargo/destination definition. M18 may add authored job labels or tutorial tags only when a briefing or results screen needs them. Do not add per-job scoring, branching jobs, random jobs, or job failure states in M17b.
+
+### Boss briefings
+
+Boss briefings are static pages in a simple text box, not a dialogue engine. The box identifies the speaker as `Boss`, wraps one page at a time, and advances with A. It appears at a shift start or immediately before its named job. While it is visible, no job simulation or job timer runs. It is used for instruction and new-mechanic introductions; stage promotion and final-win pages use the same presentation.
+
+Do not add choices, portraits, localization infrastructure, runtime scripting, cutscenes, or arbitrary mid-frame message injection.
+
+### Shift state and results
+
+The top-level game-flow state is exactly:
+
+```text
+title | briefing | playing_shift | shift_results | promotion | campaign_complete
+```
+
+`playing_shift` owns the active job index, existing job state, pallet, forklift state, and elapsed shift time. Existing job completion advances the active job index. Completing the final job freezes shift simulation and opens `shift_results`.
+
+Shift results show:
+
+- shift name and completion status;
+- completion time and time bonus;
+- completed-job count;
+- collision impact/damage count;
+- points earned; and
+- the next unlocked shift or promotion outcome.
+
+Score is shift-scoped and deterministic:
+
+```text
+points = max(0,
+    completion_points
+    + max(0, target_time_seconds - elapsed_seconds) * time_bonus_per_second
+    - collision_impacts * collision_penalty)
+```
+
+Use integer points and round the time bonus down to whole points. A collision impact is recorded once when a movement attempt first becomes blocked by collision; it is not recorded every frame while the forklift remains in contact. Each impact increments both `collision_impacts` and the displayed damage count. Damage has no physical health bar and cannot fail a job in this milestone.
+
+### Progress save
+
+Save only after the player confirms a completed shift result or promotion. Do not save mid-job.
+
+The explicit, versioned save contains:
+
+```text
+save_version
+next_unfinished_stage_id
+next_unfinished_shift_id
+campaign_complete
+```
+
+At shift completion, unlock and save the next shift. At the final shift of a stage, show its promotion, unlock and save the next stage's first shift, then continue. At the final campaign shift, save `campaign_complete = true` and show the win state. Restarting a job never changes saved progression.
+
+Do not persist best time, high score, partial shift state, steering ratio, raw structs, or audio state in M17b. Best-score persistence and optional settings are M17c after scoring and settings values stabilize.
+
+### Implementation order
+
+1. Define stable campaign, stage, shift, boss-message, scoring, and progress-save data using the current four jobs as one provisional Training Facility shift.
+2. Add the title screen and `Continue Main Game` entry path.
+3. Add briefing and `playing_shift` state transitions around existing jobs; preserve current cargo, collision, renderer, and render-only camera invariants.
+4. Add impact-onset accounting and shift results with the deterministic score formula.
+5. Add completed-shift save/load, promotion, next-stage unlock, and final campaign-complete flow.
+6. Replace the provisional Training Facility shift with authored multi-shift Training Facility content only during M18 content production.
+
+### Hardware gate
+
+- A fresh install starts Training Facility shift one from the title screen.
+- The next job is unavailable until the current job is delivered.
+- Boss pages block job input and timer until dismissed, then return to the intended job.
+- Restarting an active job does not alter saved progression, active shift identity, or prior completed shifts.
+- A sustained collision counts one impact, while separating and colliding again counts a second.
+- Shift results report deterministic time, impact count, and points.
+- Completing a shift survives reboot and `Continue Main Game` starts the next unfinished shift.
+- A test-only short campaign proves stage promotion, the `Forklift Certified` reward, next-stage unlock, and final win flow.
+- Gameplay stays at the established device frame-rate cap during normal driving and results/briefing transitions.
+
+## Deferred M17c — Optional settings and best results
+
+- [ ] optional steering-angle indicator checkmark item
+- [ ] persist steering ratio after the preferred default is hardware selected
+- [ ] save best score/time after the scoring formula is hardware tuned
 
 Avoid serializing raw structs directly if layout/version changes could break saves. Use a small explicit save format/version.
 
@@ -1533,18 +1740,18 @@ Only after this passes should the art pipeline scale to many assets.
 
 Build this after the two MVPs above:
 
-- one small warehouse zone
+- one Training Facility stage with a small warehouse zone
 - one forklift
 - one floor pallet
 - one shelf pallet
 - one standard cargo
 - one heavy cargo
 - one awkward/silly cargo
-- five short jobs
-- basic timer/impact scoring
+- two or more short shifts with five or more total jobs
+- shift timer/impact scoring and results
 - basic sound
 - representative 2.5D art
-- restart/pause
+- title-screen Continue Main Game, boss briefings, and system-menu restart
 - steering sensitivity option
 
 Target session length: roughly 10–20 minutes.

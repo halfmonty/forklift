@@ -29,8 +29,32 @@ pub fn bodyCollisionCenter(forklift: Forklift) math2.Vec2 {
 
 pub const InputState = struct {
     crank_delta_deg: f32,
+    steering_ratio: SteeringRatio,
     forward: bool,
     reverse: bool,
+};
+
+pub const SteeringRatio = enum {
+    low,
+    medium,
+    high,
+
+    pub fn wheelAngleMultiplier(self: SteeringRatio) f32 {
+        return switch (self) {
+            .low => 1.0 / 8.0,
+            .medium => 1.0 / 4.0,
+            .high => 1.0,
+        };
+    }
+
+    pub fn fromMenuValue(value: c_int) SteeringRatio {
+        return switch (value) {
+            0 => .low,
+            1 => .medium,
+            2 => .high,
+            else => .low,
+        };
+    }
 };
 
 pub const ForkHeight = enum(c_int) {
@@ -120,7 +144,7 @@ pub fn update(
     forklift.steer_angle_rad = math2.wrapAngle(
         forklift.steer_angle_rad +
             math2.degreesToRadians(input.crank_delta_deg) *
-                config.steering_gain,
+                input.steering_ratio.wheelAngleMultiplier(),
     );
 
     const desired_speed: f32 = if (input.forward and !input.reverse)
@@ -201,4 +225,10 @@ test "fork geometry faces body heading" {
         forks.right_base.y);
     try @import("std").testing.expect(forks.left_base.x <
         forks.right_base.x);
+}
+
+test "steering ratios match their crank-to-wheel rotation ratios" {
+    try @import("std").testing.expectApproxEqAbs(@as(f32, 1.0 / 3.0), SteeringRatio.low.wheelAngleMultiplier(), 0.0001);
+    try @import("std").testing.expectApproxEqAbs(@as(f32, 1.0 / 2.0), SteeringRatio.medium.wheelAngleMultiplier(), 0.0001);
+    try @import("std").testing.expectApproxEqAbs(@as(f32, 1.0), SteeringRatio.high.wheelAngleMultiplier(), 0.0001);
 }
