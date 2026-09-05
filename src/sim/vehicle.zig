@@ -1,6 +1,6 @@
 const std = @import("std");
 const math2 = @import("math2.zig");
-const config = @import("config.zig");
+const config = @import("../config.zig");
 
 pub const body_front_extent: f32 = 20;
 pub const body_rear_extent: f32 = 14;

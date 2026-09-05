@@ -1,7 +1,7 @@
 const std = @import("std");
 const math2 = @import("math2.zig");
 const vehicle = @import("vehicle.zig");
-const config = @import("config.zig");
+const config = @import("../config.zig");
 
 pub const PalletState = enum {
     floor,

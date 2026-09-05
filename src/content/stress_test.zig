@@ -1,15 +1,16 @@
-const level = @import("../level.zig");
-const math2 = @import("../math2.zig");
-const collision = @import("../collision.zig");
-const vehicle = @import("../vehicle.zig");
-const jobs = @import("../jobs.zig");
-const cargo = @import("../cargo.zig");
-const campaign = @import("../campaign.zig");
-const scoring = @import("../scoring.zig");
+const static_level = @import("static_level.zig");
+const math2 = @import("../sim/math2.zig");
+const collision = @import("../sim/collision.zig");
+const vehicle = @import("../sim/vehicle.zig");
+const jobs = @import("../sim/jobs.zig");
+const cargo = @import("../sim/cargo.zig");
+const campaign = @import("../game/campaign.zig");
+const scoring = @import("../game/scoring.zig");
 
 pub const forklift_spawn = math2.Vec2{ .x = 600, .y = 400 };
+pub const world_size = math2.Vec2{ .x = 2400, .y = 1600 };
 
-const rack_low_shelf = level.Shelf{
+const rack_low_shelf = static_level.Shelf{
     .zone = .{ .x = 960, .y = 380, .width = 100, .height = 100 },
     .support_z = vehicle.forkZ(.rack_low),
 };
@@ -21,38 +22,38 @@ const destination = collision.Rect{
     .height = 100,
 };
 
-pub const Warehouse = level.StaticLevel(.{
-    level.TallBox{ .position = .{ .x = 1000, .y = 150 } },
-    level.Rack{ .bounds = .{ .x = 220, .y = 200, .width = 520, .height = 36 } },
-    level.Obstacle{ .bounds = .{ .x = 220, .y = 500, .width = 520, .height = 36 } },
-    level.Obstacle{ .bounds = .{ .x = 820, .y = 280, .width = 36, .height = 256 } },
+pub const Warehouse = static_level.StaticLevel(.{
+    static_level.TallBox{ .position = .{ .x = 1000, .y = 150 } },
+    static_level.Rack{ .bounds = .{ .x = 220, .y = 200, .width = 520, .height = 36 } },
+    static_level.Obstacle{ .bounds = .{ .x = 220, .y = 500, .width = 520, .height = 36 } },
+    static_level.Obstacle{ .bounds = .{ .x = 820, .y = 280, .width = 36, .height = 256 } },
     rack_low_shelf,
-    level.Cone{ .position = .{ .x = 100, .y = 100 } },
-    level.Cone{ .position = .{ .x = 1100, .y = 100 } },
-    level.Cone{ .position = .{ .x = 100, .y = 700 } },
-    level.Cone{ .position = .{ .x = 1100, .y = 700 } },
-    level.Cone{ .position = .{ .x = 500, .y = 300 } },
-    level.Cone{ .position = .{ .x = 600, .y = 260 } },
-    level.Cone{ .position = .{ .x = 700, .y = 300 } },
-    level.Cone{ .position = .{ .x = 700, .y = 500 } },
-    level.Obstacle{ .bounds = .{ .x = 40, .y = 40, .width = 160, .height = 28 } },
-    level.Obstacle{ .bounds = .{ .x = 260, .y = 40, .width = 160, .height = 28 } },
-    level.Obstacle{ .bounds = .{ .x = 480, .y = 40, .width = 160, .height = 28 } },
-    level.Obstacle{ .bounds = .{ .x = 700, .y = 40, .width = 160, .height = 28 } },
-    level.Obstacle{ .bounds = .{ .x = 920, .y = 40, .width = 160, .height = 28 } },
-    level.Obstacle{ .bounds = .{ .x = 40, .y = 732, .width = 160, .height = 28 } },
-    level.Obstacle{ .bounds = .{ .x = 260, .y = 732, .width = 160, .height = 28 } },
-    level.Obstacle{ .bounds = .{ .x = 480, .y = 732, .width = 160, .height = 28 } },
-    level.Obstacle{ .bounds = .{ .x = 700, .y = 732, .width = 160, .height = 28 } },
-    level.Obstacle{ .bounds = .{ .x = 920, .y = 732, .width = 160, .height = 28 } },
-    level.Rack{ .bounds = .{ .x = 280, .y = 180, .width = 160, .height = 36 } },
-    level.Rack{ .bounds = .{ .x = 520, .y = 180, .width = 160, .height = 36 } },
-    level.Rack{ .bounds = .{ .x = 760, .y = 180, .width = 160, .height = 36 } },
-    level.Rack{ .bounds = .{ .x = 280, .y = 300, .width = 160, .height = 36 } },
-    level.Rack{ .bounds = .{ .x = 520, .y = 300, .width = 160, .height = 36 } },
-    level.Rack{ .bounds = .{ .x = 760, .y = 300, .width = 160, .height = 36 } },
-    level.Rack{ .bounds = .{ .x = 280, .y = 540, .width = 160, .height = 36 } },
-    level.Rack{ .bounds = .{ .x = 640, .y = 540, .width = 160, .height = 36 } },
+    static_level.Cone{ .position = .{ .x = 100, .y = 100 } },
+    static_level.Cone{ .position = .{ .x = 1100, .y = 100 } },
+    static_level.Cone{ .position = .{ .x = 100, .y = 700 } },
+    static_level.Cone{ .position = .{ .x = 1100, .y = 700 } },
+    static_level.Cone{ .position = .{ .x = 500, .y = 300 } },
+    static_level.Cone{ .position = .{ .x = 600, .y = 260 } },
+    static_level.Cone{ .position = .{ .x = 700, .y = 300 } },
+    static_level.Cone{ .position = .{ .x = 700, .y = 500 } },
+    static_level.Obstacle{ .bounds = .{ .x = 40, .y = 40, .width = 160, .height = 28 } },
+    static_level.Obstacle{ .bounds = .{ .x = 260, .y = 40, .width = 160, .height = 28 } },
+    static_level.Obstacle{ .bounds = .{ .x = 480, .y = 40, .width = 160, .height = 28 } },
+    static_level.Obstacle{ .bounds = .{ .x = 700, .y = 40, .width = 160, .height = 28 } },
+    static_level.Obstacle{ .bounds = .{ .x = 920, .y = 40, .width = 160, .height = 28 } },
+    static_level.Obstacle{ .bounds = .{ .x = 40, .y = 732, .width = 160, .height = 28 } },
+    static_level.Obstacle{ .bounds = .{ .x = 260, .y = 732, .width = 160, .height = 28 } },
+    static_level.Obstacle{ .bounds = .{ .x = 480, .y = 732, .width = 160, .height = 28 } },
+    static_level.Obstacle{ .bounds = .{ .x = 700, .y = 732, .width = 160, .height = 28 } },
+    static_level.Obstacle{ .bounds = .{ .x = 920, .y = 732, .width = 160, .height = 28 } },
+    static_level.Rack{ .bounds = .{ .x = 280, .y = 180, .width = 160, .height = 36 } },
+    static_level.Rack{ .bounds = .{ .x = 520, .y = 180, .width = 160, .height = 36 } },
+    static_level.Rack{ .bounds = .{ .x = 760, .y = 180, .width = 160, .height = 36 } },
+    static_level.Rack{ .bounds = .{ .x = 280, .y = 300, .width = 160, .height = 36 } },
+    static_level.Rack{ .bounds = .{ .x = 520, .y = 300, .width = 160, .height = 36 } },
+    static_level.Rack{ .bounds = .{ .x = 760, .y = 300, .width = 160, .height = 36 } },
+    static_level.Rack{ .bounds = .{ .x = 280, .y = 540, .width = 160, .height = 36 } },
+    static_level.Rack{ .bounds = .{ .x = 640, .y = 540, .width = 160, .height = 36 } },
 });
 
 pub const warehouse = Warehouse{};

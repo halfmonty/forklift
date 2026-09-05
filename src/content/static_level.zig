@@ -1,8 +1,8 @@
-const cargo = @import("cargo.zig");
-const collision = @import("collision.zig");
-const math2 = @import("math2.zig");
-const render = @import("render.zig");
-const vehicle = @import("vehicle.zig");
+const cargo = @import("../sim/cargo.zig");
+const collision = @import("../sim/collision.zig");
+const math2 = @import("../sim/math2.zig");
+const render = @import("../render/renderer.zig");
+const vehicle = @import("../sim/vehicle.zig");
 
 pub const DrawPhase = enum {
     before_actors,

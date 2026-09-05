@@ -1,11 +1,11 @@
 const std = @import("std");
-const pdapi = @import("playdate_api_definitions.zig");
-const vehicle = @import("vehicle.zig");
+const pdapi = @import("../playdate_api_definitions.zig");
+const vehicle = @import("../sim/vehicle.zig");
 const camera = @import("camera.zig");
-const math2 = @import("math2.zig");
-const render25d = @import("render25d.zig");
-const cargo = @import("cargo.zig");
-const collision = @import("collision.zig");
+const math2 = @import("../sim/math2.zig");
+const projection = @import("projection.zig");
+const cargo = @import("../sim/cargo.zig");
+const collision = @import("../sim/collision.zig");
 
 const black: pdapi.LCDColor = @intCast(@intFromEnum(pdapi.LCDSolidColor.ColorBlack));
 
@@ -172,29 +172,29 @@ pub fn drawForklift(
     drawQuad(playdate, deck, white, black);
 
     const forks = vehicle.forkGeometry(forklift);
-    const left_base = render25d.project(
+    const left_base = projection.project(
         forks.left_base,
         fork_z,
         camera_state,
-        render25d.default_tuning,
+        projection.default_tuning,
     );
-    const left_tip = render25d.project(
+    const left_tip = projection.project(
         forks.left_tip,
         fork_z,
         camera_state,
-        render25d.default_tuning,
+        projection.default_tuning,
     );
-    const right_base = render25d.project(
+    const right_base = projection.project(
         forks.right_base,
         fork_z,
         camera_state,
-        render25d.default_tuning,
+        projection.default_tuning,
     );
-    const right_tip = render25d.project(
+    const right_tip = projection.project(
         forks.right_tip,
         fork_z,
         camera_state,
-        render25d.default_tuning,
+        projection.default_tuning,
     );
 
     line(playdate, left_base, left_tip, 3, black);
@@ -202,29 +202,29 @@ pub fn drawForklift(
 
     const mast_top_z: f32 = 40;
 
-    const left_mast_base = render25d.project(
+    const left_mast_base = projection.project(
         forks.left_base,
         0,
         camera_state,
-        render25d.default_tuning,
+        projection.default_tuning,
     );
-    const right_mast_base = render25d.project(
+    const right_mast_base = projection.project(
         forks.right_base,
         0,
         camera_state,
-        render25d.default_tuning,
+        projection.default_tuning,
     );
-    const left_mast_top = render25d.project(
+    const left_mast_top = projection.project(
         forks.left_base,
         mast_top_z,
         camera_state,
-        render25d.default_tuning,
+        projection.default_tuning,
     );
-    const right_mast_top = render25d.project(
+    const right_mast_top = projection.project(
         forks.right_base,
         mast_top_z,
         camera_state,
-        render25d.default_tuning,
+        projection.default_tuning,
     );
 
     line(playdate, left_mast_base, left_mast_top, 2, black);
@@ -241,17 +241,17 @@ pub fn drawForklift(
     );
     line(
         playdate,
-        render25d.project(
+        projection.project(
             math2.sub(rear_axle, math2.scale(wheel_direction, 10)),
             0,
             camera_state,
-            render25d.default_tuning,
+            projection.default_tuning,
         ),
-        render25d.project(
+        projection.project(
             math2.add(rear_axle, math2.scale(wheel_direction, 10)),
             0,
             camera_state,
-            render25d.default_tuning,
+            projection.default_tuning,
         ),
         5,
         black,
@@ -275,17 +275,17 @@ pub fn drawForklift(
         camera_state,
     );
 
-    const left_support_base = render25d.project(
+    const left_support_base = projection.project(
         offsetPoint(body_center, forward, right, -8, -8),
         6,
         camera_state,
-        render25d.default_tuning,
+        projection.default_tuning,
     );
-    const right_support_base = render25d.project(
+    const right_support_base = projection.project(
         offsetPoint(body_center, forward, right, -8, 8),
         6,
         camera_state,
-        render25d.default_tuning,
+        projection.default_tuning,
     );
 
     line(playdate, left_support_base, canopy[3], 2, black);
@@ -317,29 +317,29 @@ pub fn drawPallet(
     const rear_right_world =
         math2.add(math2.sub(pallet.position, front), side);
 
-    const front_left = render25d.project(
+    const front_left = projection.project(
         front_left_world,
         pallet.z,
         camera_state,
-        render25d.default_tuning,
+        projection.default_tuning,
     );
-    const front_right = render25d.project(
+    const front_right = projection.project(
         front_right_world,
         pallet.z,
         camera_state,
-        render25d.default_tuning,
+        projection.default_tuning,
     );
-    const rear_left = render25d.project(
+    const rear_left = projection.project(
         rear_left_world,
         pallet.z,
         camera_state,
-        render25d.default_tuning,
+        projection.default_tuning,
     );
-    const rear_right = render25d.project(
+    const rear_right = projection.project(
         rear_right_world,
         pallet.z,
         camera_state,
-        render25d.default_tuning,
+        projection.default_tuning,
     );
 
     line(playdate, front_left, front_right, 2, color);
@@ -401,34 +401,34 @@ fn drawPalletEntryLanes(
 
     line(
         playdate,
-        render25d.project(
+        projection.project(
             left_entry,
             pallet.z,
             camera_state,
-            render25d.default_tuning,
+            projection.default_tuning,
         ),
-        render25d.project(
+        projection.project(
             math2.add(left_entry, entry_length),
             pallet.z,
             camera_state,
-            render25d.default_tuning,
+            projection.default_tuning,
         ),
         1,
         color,
     );
     line(
         playdate,
-        render25d.project(
+        projection.project(
             right_entry,
             pallet.z,
             camera_state,
-            render25d.default_tuning,
+            projection.default_tuning,
         ),
-        render25d.project(
+        projection.project(
             math2.add(right_entry, entry_length),
             pallet.z,
             camera_state,
-            render25d.default_tuning,
+            projection.default_tuning,
         ),
         1,
         color,
@@ -445,11 +445,11 @@ pub fn drawPalletShadow(
         pallet.z > pallet.support_z or pallet.support_z > 0;
     if (!should_draw_shadow) return;
 
-    const center = render25d.project(
+    const center = projection.project(
         pallet.position,
         pallet.support_z,
         camera_state,
-        render25d.default_tuning,
+        projection.default_tuning,
     );
 
     playdate.graphics.fillEllipse(
@@ -490,29 +490,29 @@ fn quadPoints(
     camera_state: camera.Camera,
 ) [4]math2.Vec2 {
     return .{
-        render25d.project(
+        projection.project(
             offsetPoint(center, forward, right, front, -half_width),
             z,
             camera_state,
-            render25d.default_tuning,
+            projection.default_tuning,
         ),
-        render25d.project(
+        projection.project(
             offsetPoint(center, forward, right, front, half_width),
             z,
             camera_state,
-            render25d.default_tuning,
+            projection.default_tuning,
         ),
-        render25d.project(
+        projection.project(
             offsetPoint(center, forward, right, -rear, half_width),
             z,
             camera_state,
-            render25d.default_tuning,
+            projection.default_tuning,
         ),
-        render25d.project(
+        projection.project(
             offsetPoint(center, forward, right, -rear, -half_width),
             z,
             camera_state,
-            render25d.default_tuning,
+            projection.default_tuning,
         ),
     };
 }
@@ -554,17 +554,17 @@ pub fn drawTallBox(
     camera_state: camera.Camera,
     color: pdapi.LCDColor,
 ) void {
-    const base = render25d.project(
+    const base = projection.project(
         world_position,
         0,
         camera_state,
-        render25d.default_tuning,
+        projection.default_tuning,
     );
-    const top = render25d.project(
+    const top = projection.project(
         world_position,
         48,
         camera_state,
-        render25d.default_tuning,
+        projection.default_tuning,
     );
 
     playdate.graphics.fillEllipse(
@@ -628,11 +628,11 @@ fn projectedRectCorners(
     camera_state: camera.Camera,
 ) [4]math2.Vec2 {
     return .{
-        render25d.project(.{ .x = rect.x, .y = rect.y }, z, camera_state, render25d.default_tuning),
-        render25d.project(.{ .x = rect.x + rect.width, .y = rect.y }, z, camera_state, render25d.default_tuning),
-        render25d.project(.{ .x = rect.x + rect.width, .y = rect.y + rect.height }, z, camera_state, render25d.default_tuning),
-        render25d.project(.{ .x = rect.x, .y = rect.y +
-            rect.height }, z, camera_state, render25d.default_tuning),
+        projection.project(.{ .x = rect.x, .y = rect.y }, z, camera_state, projection.default_tuning),
+        projection.project(.{ .x = rect.x + rect.width, .y = rect.y }, z, camera_state, projection.default_tuning),
+        projection.project(.{ .x = rect.x + rect.width, .y = rect.y + rect.height }, z, camera_state, projection.default_tuning),
+        projection.project(.{ .x = rect.x, .y = rect.y +
+            rect.height }, z, camera_state, projection.default_tuning),
     };
 }
 
@@ -761,29 +761,29 @@ pub fn drawRackFront(
     const front_left_world = front_edge[0];
     const front_right_world = front_edge[1];
 
-    const ground_left = render25d.project(
+    const ground_left = projection.project(
         front_left_world,
         0,
         camera_state,
-        render25d.default_tuning,
+        projection.default_tuning,
     );
-    const ground_right = render25d.project(
+    const ground_right = projection.project(
         front_right_world,
         0,
         camera_state,
-        render25d.default_tuning,
+        projection.default_tuning,
     );
-    const top_left = render25d.project(
+    const top_left = projection.project(
         front_left_world,
         80,
         camera_state,
-        render25d.default_tuning,
+        projection.default_tuning,
     );
-    const top_right = render25d.project(
+    const top_right = projection.project(
         front_right_world,
         80,
         camera_state,
-        render25d.default_tuning,
+        projection.default_tuning,
     );
 
     const top = projectedRectCorners(rack, 80, camera_state);
@@ -864,17 +864,17 @@ pub fn drawShelf(
     var top: [4]math2.Vec2 = undefined;
 
     for (world_corners, 0..) |corner, index| {
-        ground[index] = render25d.project(
+        ground[index] = projection.project(
             corner,
             0,
             camera_state,
-            render25d.default_tuning,
+            projection.default_tuning,
         );
-        top[index] = render25d.project(
+        top[index] = projection.project(
             corner,
             support_z,
             camera_state,
-            render25d.default_tuning,
+            projection.default_tuning,
         );
     }
 

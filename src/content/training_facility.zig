@@ -1,13 +1,14 @@
-const level = @import("../level.zig");
-const math2 = @import("../math2.zig");
-const collision = @import("../collision.zig");
-const vehicle = @import("../vehicle.zig");
-const jobs = @import("../jobs.zig");
-const cargo = @import("../cargo.zig");
-const campaign = @import("../campaign.zig");
-const scoring = @import("../scoring.zig");
+const static_level = @import("static_level.zig");
+const math2 = @import("../sim/math2.zig");
+const collision = @import("../sim/collision.zig");
+const vehicle = @import("../sim/vehicle.zig");
+const jobs = @import("../sim/jobs.zig");
+const cargo = @import("../sim/cargo.zig");
+const campaign = @import("../game/campaign.zig");
+const scoring = @import("../game/scoring.zig");
 
 pub const forklift_spawn = math2.Vec2{ .x = 600, .y = 400 };
+pub const world_size = math2.Vec2{ .x = 1200, .y = 800 };
 
 const Shelf = struct {
     zone: collision.Rect,
@@ -49,23 +50,23 @@ const destination = collision.Rect{
     .height = 100,
 };
 
-pub const Warehouse = level.StaticLevel(.{
-    level.TallBox{ .position = tall_box_position },
-    level.Rack{ .bounds = occlusion_rack },
-    level.Obstacle{ .bounds = normal_obstacles[1] },
-    level.Obstacle{ .bounds = normal_obstacles[2] },
-    level.Shelf{
+pub const Warehouse = static_level.StaticLevel(.{
+    static_level.TallBox{ .position = tall_box_position },
+    static_level.Rack{ .bounds = occlusion_rack },
+    static_level.Obstacle{ .bounds = normal_obstacles[1] },
+    static_level.Obstacle{ .bounds = normal_obstacles[2] },
+    static_level.Shelf{
         .zone = rack_low_shelf.zone,
         .support_z = rack_low_shelf.support_z,
     },
-    level.Cone{ .position = .{ .x = 100, .y = 100 } },
-    level.Cone{ .position = .{ .x = 1100, .y = 100 } },
-    level.Cone{ .position = .{ .x = 100, .y = 700 } },
-    level.Cone{ .position = .{ .x = 1100, .y = 700 } },
-    level.Cone{ .position = .{ .x = 500, .y = 300 } },
-    level.Cone{ .position = .{ .x = 600, .y = 260 } },
-    level.Cone{ .position = .{ .x = 700, .y = 300 } },
-    level.Cone{ .position = .{ .x = 700, .y = 500 } },
+    static_level.Cone{ .position = .{ .x = 100, .y = 100 } },
+    static_level.Cone{ .position = .{ .x = 1100, .y = 100 } },
+    static_level.Cone{ .position = .{ .x = 100, .y = 700 } },
+    static_level.Cone{ .position = .{ .x = 1100, .y = 700 } },
+    static_level.Cone{ .position = .{ .x = 500, .y = 300 } },
+    static_level.Cone{ .position = .{ .x = 600, .y = 260 } },
+    static_level.Cone{ .position = .{ .x = 700, .y = 300 } },
+    static_level.Cone{ .position = .{ .x = 700, .y = 500 } },
 });
 
 pub const warehouse = Warehouse{};

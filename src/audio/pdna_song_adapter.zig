@@ -1,4 +1,4 @@
-const pd = @import("playdate_api_definitions.zig");
+const pd = @import("../playdate_api_definitions.zig");
 const voice = @import("pdna_effect_adapter.zig");
 
 pub const track_count = 4;

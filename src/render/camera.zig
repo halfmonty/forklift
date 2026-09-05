@@ -1,6 +1,6 @@
 const std = @import("std");
-const config = @import("config.zig");
-const math2 = @import("math2.zig");
+const config = @import("../config.zig");
+const math2 = @import("../sim/math2.zig");
 
 pub const View = enum(u2) {
     north,
@@ -31,19 +31,23 @@ pub fn visibleWorldBounds(camera: Camera) WorldBounds {
     };
 }
 
-pub fn follow(camera: *Camera, target: math2.Vec2) void {
+pub fn follow(
+    camera: *Camera,
+    target: math2.Vec2,
+    world_size: math2.Vec2,
+) void {
     const half = halfExtents(camera.view);
 
     camera.position = .{
         .x = clamp(
             target.x - half.x,
             0,
-            config.world_width - half.x * 2,
+            world_size.x - half.x * 2,
         ),
         .y = clamp(
             target.y - half.y,
             0,
-            config.world_height - half.y * 2,
+            world_size.y - half.y * 2,
         ),
     };
 }
@@ -107,7 +111,7 @@ fn clamp(value: f32, minimum: f32, maximum: f32) f32 {
 
 test "north camera centers target" {
     var camera = Camera{};
-    follow(&camera, .{ .x = 600, .y = 400 });
+    follow(&camera, .{ .x = 600, .y = 400 }, .{ .x = 1200, .y = 800 });
 
     const screen = worldToScreen(.{ .x = 600, .y = 400 }, camera);
     try std.testing.expectApproxEqAbs(@as(f32, 200), screen.x, 0.001);
@@ -117,9 +121,17 @@ test "north camera centers target" {
 test "east camera rotates world clockwise" {
     var camera = Camera{};
     rotateClockwise(&camera);
-    follow(&camera, .{ .x = 600, .y = 400 });
+    follow(&camera, .{ .x = 600, .y = 400 }, .{ .x = 1200, .y = 800 });
 
     const screen = worldToScreen(.{ .x = 700, .y = 400 }, camera);
     try std.testing.expectApproxEqAbs(@as(f32, 200), screen.x, 0.001);
     try std.testing.expectApproxEqAbs(@as(f32, 220), screen.y, 0.001);
+}
+
+test "follow clamps to the selected world size" {
+    var camera = Camera{};
+    follow(&camera, .{ .x = 2400, .y = 1600 }, .{ .x = 2400, .y = 1600 });
+
+    try std.testing.expectApproxEqAbs(@as(f32, 2200), camera.position.x, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 1480), camera.position.y, 0.001);
 }

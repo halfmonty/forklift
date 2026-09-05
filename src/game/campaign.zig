@@ -1,4 +1,4 @@
-const jobs = @import("jobs.zig");
+const jobs = @import("../sim/jobs.zig");
 const scoring = @import("scoring.zig");
 
 pub const FlowState = enum {

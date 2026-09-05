@@ -1,7 +1,7 @@
 const std = @import("std");
 const camera = @import("camera.zig");
-const math2 = @import("math2.zig");
-const config = @import("config.zig");
+const math2 = @import("../sim/math2.zig");
+const config = @import("../config.zig");
 
 pub const default_tuning = ProjectionTuning{
     .z_skew_x = 0,
