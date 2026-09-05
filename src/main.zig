@@ -2,139 +2,27 @@ const std = @import("std");
 const pdapi = @import("playdate_api_definitions.zig");
 const panic_handler = @import("panic_handler.zig");
 const math2 = @import("math2.zig");
-const config = @import("config.zig");
 const vehicle = @import("vehicle.zig");
 const camera = @import("camera.zig");
 const collision = @import("collision.zig");
 const cargo = @import("cargo.zig");
 const jobs = @import("jobs.zig");
-const level = @import("level.zig");
 const render = @import("render.zig");
 const audio = @import("audio.zig");
 const pdna_effects = @import("pdna_effects.zig");
 const pdna_song = @import("pdna_song_1.zig");
+const campaign = @import("campaign.zig");
+const scoring = @import("scoring.zig");
+const training_facility = @import("content/training_facility.zig");
+const stress_test = @import("content/stress_test.zig");
 
-const stress_mode = false;
+const use_stress_stage = false;
+const ActiveStage = if (use_stress_stage) stress_test else training_facility;
 const render_cull_margin: f32 = 50;
-const initial_forklift_position = math2.Vec2{ .x = 600, .y = 400 };
+const impact_rearm_distance: f32 = 12;
 var steering_ratio_option_titles = [_]?[*:0]const u8{ "Low", "Medium", "High" };
 
-const normal_obstacles = [_]collision.Rect{
-    occlusion_rack,
-    .{ .x = 220, .y = 500, .width = 520, .height = 36 },
-    .{ .x = 820, .y = 280, .width = 36, .height = 256 },
-};
-
-const stress_obstacles = normal_obstacles ++ [_]collision.Rect{
-    .{ .x = 40, .y = 40, .width = 160, .height = 28 },
-    .{ .x = 260, .y = 40, .width = 160, .height = 28 },
-    .{ .x = 480, .y = 40, .width = 160, .height = 28 },
-    .{ .x = 700, .y = 40, .width = 160, .height = 28 },
-    .{ .x = 920, .y = 40, .width = 160, .height = 28 },
-
-    .{ .x = 40, .y = 732, .width = 160, .height = 28 },
-    .{ .x = 260, .y = 732, .width = 160, .height = 28 },
-    .{ .x = 480, .y = 732, .width = 160, .height = 28 },
-    .{ .x = 700, .y = 732, .width = 160, .height = 28 },
-    .{ .x = 920, .y = 732, .width = 160, .height = 28 },
-};
-
-const stress_pallets = [_]cargo.Pallet{
-    .{ .position = .{ .x = 440, .y = 330 } },
-    .{ .position = .{ .x = 500, .y = 330 } },
-    .{ .position = .{ .x = 560, .y = 330 } },
-    .{ .position = .{ .x = 620, .y = 330 } },
-    .{ .position = .{ .x = 680, .y = 330 } },
-    .{ .position = .{ .x = 440, .y = 410 } },
-    .{ .position = .{ .x = 500, .y = 410 } },
-    .{ .position = .{ .x = 560, .y = 410 } },
-    .{ .position = .{ .x = 620, .y = 410 } },
-    .{ .position = .{ .x = 680, .y = 410 } },
-    .{
-        .position = .{ .x = 740, .y = 330 },
-        .cargo = cargo.long_cargo,
-        .footprint = cargo.long_cargo.footprint,
-    },
-    .{
-        .position = .{ .x = 740, .y = 440 },
-        .cargo = cargo.heavy_cargo,
-        .footprint = cargo.heavy_cargo.footprint,
-    },
-};
-
-const stress_racks = [_]collision.Rect{
-    .{ .x = 280, .y = 180, .width = 160, .height = 36 },
-    .{ .x = 520, .y = 180, .width = 160, .height = 36 },
-    .{ .x = 760, .y = 180, .width = 160, .height = 36 },
-    .{ .x = 280, .y = 300, .width = 160, .height = 36 },
-    .{ .x = 520, .y = 300, .width = 160, .height = 36 },
-    .{ .x = 760, .y = 300, .width = 160, .height = 36 },
-    .{ .x = 280, .y = 540, .width = 160, .height = 36 },
-    .{ .x = 640, .y = 540, .width = 160, .height = 36 },
-};
-
-const obstacles: []const collision.Rect =
-    if (stress_mode)
-        &stress_obstacles
-    else
-        &normal_obstacles;
-
 pub const panic = panic_handler.panic;
-
-const tall_box_position = math2.Vec2{
-    .x = 1000,
-    .y = 150,
-};
-
-const destination = collision.Rect{
-    .x = 950,
-    .y = 600,
-    .width = 100,
-    .height = 100,
-};
-
-const occlusion_rack = collision.Rect{
-    .x = 220,
-    .y = 200,
-    .width = 520,
-    .height = 36,
-};
-
-const Shelf = struct {
-    zone: collision.Rect,
-    support_z: f32,
-};
-
-const rack_low_shelf = Shelf{
-    .zone = .{
-        .x = 960,
-        .y = 380,
-        .width = 100,
-        .height = 100,
-    },
-    .support_z = vehicle.forkZ(.rack_low),
-};
-
-const Warehouse = level.StaticLevel(.{
-    level.TallBox{ .position = tall_box_position },
-    level.Rack{ .bounds = occlusion_rack },
-    level.Obstacle{ .bounds = normal_obstacles[1] },
-    level.Obstacle{ .bounds = normal_obstacles[2] },
-    level.Shelf{
-        .zone = rack_low_shelf.zone,
-        .support_z = rack_low_shelf.support_z,
-    },
-    level.Cone{ .position = .{ .x = 100, .y = 100 } },
-    level.Cone{ .position = .{ .x = 1100, .y = 100 } },
-    level.Cone{ .position = .{ .x = 100, .y = 700 } },
-    level.Cone{ .position = .{ .x = 1100, .y = 700 } },
-    level.Cone{ .position = .{ .x = 500, .y = 300 } },
-    level.Cone{ .position = .{ .x = 600, .y = 260 } },
-    level.Cone{ .position = .{ .x = 700, .y = 300 } },
-    level.Cone{ .position = .{ .x = 700, .y = 500 } },
-});
-
-const warehouse = Warehouse{};
 
 const pickup_tuning = cargo.PickupTuning{
     .max_angle_error_rad = 0.4,
@@ -142,50 +30,9 @@ const pickup_tuning = cargo.PickupTuning{
     .minimum_insertion = 18,
 };
 
-const jobs_data = [_]jobs.JobDefinition{
-    .{
-        .pallet_spawn = .{
-            .position = .{ .x = 600, .y = 300 },
-        },
-        .destination = destination,
-        .cargo = cargo.standard_cargo,
-    },
-    .{
-        .pallet_spawn = .{
-            .position = .{ .x = 300, .y = 600 },
-        },
-        .destination = .{
-            .x = 900,
-            .y = 550,
-            .width = 75,
-            .height = 75,
-        },
-        .cargo = cargo.heavy_cargo,
-    },
-    .{
-        .pallet_spawn = .{
-            .position = .{ .x = 1010, .y = 430 },
-            .support_z = vehicle.forkZ(.rack_low),
-        },
-        .destination = .{
-            .x = 500,
-            .y = 600,
-            .width = 100,
-            .height = 100,
-        },
-        .cargo = cargo.standard_cargo,
-    },
-    .{
-        .pallet_spawn = .{
-            .position = .{ .x = 600, .y = 650 },
-        },
-        .destination = .{
-            .x = 880,
-            .y = 100,
-            .width = 120,
-            .height = 120,
-        },
-        .cargo = cargo.long_cargo,
+const campaign_data = campaign.CampaignDefinition{
+    .stages = &[_]campaign.StageDefinition{
+        ActiveStage.stage,
     },
 };
 
@@ -199,23 +46,34 @@ fn palletForJob(job: jobs.JobDefinition) cargo.Pallet {
     };
 }
 
+fn activeShift(game: *const Game) *const campaign.ShiftDefinition {
+    return &campaign_data.stages[game.stage_index].shifts[game.shift_index];
+}
+
 pub const Game = struct {
     playdate: *pdapi.PlaydateAPI,
     audio: audio.Audio,
     font: *pdapi.LCDFont,
     forklift: vehicle.Forklift = .{
-        .position = initial_forklift_position,
+        .position = ActiveStage.forklift_spawn,
     },
     debug_buffer: [192]u8 = undefined,
     camera: camera.Camera = .{},
     job_index: usize = 0,
-    pallet: cargo.Pallet = palletForJob(jobs_data[0]),
+    pallet: cargo.Pallet = palletForJob(ActiveStage.shift.jobs[0]),
     job_state: jobs.JobState = .waiting_for_pickup,
-    job_elapsed_seconds: f32 = 0,
-    fame_ms: f32 = 0,
+    shift_elapsed_seconds: f32 = 0,
+    collision_impacts: u32 = 0,
+    impact_origin: ?math2.Vec2 = null,
+    shift_result: ?scoring.ShiftResult = null,
+    frame_ms: f32 = 0,
     restart_requested: bool = false,
     steering_ratio: vehicle.SteeringRatio = .medium,
     steering_ratio_menu_item: ?*pdapi.PDMenuItem = null,
+    flow_state: campaign.FlowState = .title,
+    stage_index: usize = 0,
+    shift_index: usize = 0,
+    briefing_page_index: usize = 0,
 };
 
 pub export fn eventHandler(
@@ -267,6 +125,34 @@ pub export fn eventHandler(
     return 0;
 }
 
+fn beginShift(game: *Game) void {
+    game.job_index = 0;
+    game.shift_elapsed_seconds = 0;
+    game.collision_impacts = 0;
+    game.impact_origin = null;
+    game.shift_result = null;
+    resetCurrentJob(game);
+}
+
+fn updateTitle(game: *Game, pushed: pdapi.PDButtons) void {
+    if (pushed & pdapi.BUTTON_A == 0) return;
+
+    beginShift(game);
+    game.briefing_page_index = 0;
+    game.flow_state = .briefing;
+}
+
+fn updateBriefing(game: *Game, pushed: pdapi.PDButtons) void {
+    if (pushed & pdapi.BUTTON_A == 0) return;
+
+    const pages = activeShift(game).opening_briefing.pages;
+    if (game.briefing_page_index + 1 < pages.len) {
+        game.briefing_page_index += 1;
+    } else {
+        game.flow_state = .playing_shift;
+    }
+}
+
 fn updateAndRender(userdata: ?*anyopaque) callconv(.c) c_int {
     const game: *Game = @ptrCast(@alignCast(userdata.?));
     const playdate = game.playdate;
@@ -277,8 +163,28 @@ fn updateAndRender(userdata: ?*anyopaque) callconv(.c) c_int {
 
     const raw_dt = playdate.system.getElapsedTime();
     const dt = @min(raw_dt, 1.0 / 15.0);
-    game.fame_ms = raw_dt * 1000.0;
+    game.frame_ms = raw_dt * 1000.0;
     playdate.system.resetElapsedTime();
+    const crank_delta_deg = playdate.system.getCrankChange();
+
+    switch (game.flow_state) {
+        .title => {
+            updateTitle(game, pushed);
+            drawTitle(game);
+            return 1;
+        },
+        .briefing => {
+            updateBriefing(game, pushed);
+            drawBriefing(game);
+            return 1;
+        },
+        .playing_shift => {},
+        .shift_results => {
+            updateShiftResults(game, pushed);
+            drawShiftResults(game);
+            return 1;
+        },
+    }
 
     if (game.restart_requested) resetCurrentJob(game);
 
@@ -289,7 +195,7 @@ fn updateAndRender(userdata: ?*anyopaque) callconv(.c) c_int {
     vehicle.update(
         &game.forklift,
         .{
-            .crank_delta_deg = playdate.system.getCrankChange(),
+            .crank_delta_deg = crank_delta_deg,
             .steering_ratio = game.steering_ratio,
             .forward = current & pdapi.BUTTON_UP != 0,
             .reverse = current & pdapi.BUTTON_DOWN != 0,
@@ -323,7 +229,21 @@ fn updateAndRender(userdata: ?*anyopaque) callconv(.c) c_int {
         cargo.followForks(&game.pallet, game.forklift);
     }
 
+    if (game.impact_origin) |origin| {
+        const displacement = math2.sub(game.forklift.position, origin);
+        if (math2.dot(displacement, displacement) >=
+            impact_rearm_distance * impact_rearm_distance)
+        {
+            game.impact_origin = null;
+        }
+    }
+
     if (forkliftCollides(game.forklift, game.pallet)) {
+        if (game.impact_origin == null) {
+            game.collision_impacts += 1;
+            game.impact_origin = previous_position;
+        }
+
         game.forklift.position = previous_position;
         game.forklift.heading_rad = previous_heading;
         game.forklift.speed = 0;
@@ -360,26 +280,35 @@ fn updateAndRender(userdata: ?*anyopaque) callconv(.c) c_int {
         if (game.forklift.fork_height == .floor) {
             cargo.drop(&game.pallet);
         } else if (game.forklift.fork_height == .rack_low and
-            palletFitsShelf(game.pallet, rack_low_shelf))
+            ActiveStage.palletFitsRackLowShelf(game.pallet))
         {
-            cargo.dropAt(&game.pallet, rack_low_shelf.support_z);
+            cargo.dropAt(&game.pallet, ActiveStage.rack_low_support_z);
         }
     }
 
+    const shift = activeShift(game);
     if (game.job_state != .delivered) {
-        game.job_elapsed_seconds += dt;
+        game.shift_elapsed_seconds += dt;
         game.job_state = jobs.update(
             game.job_state,
             game.pallet,
-            jobs_data[game.job_index].destination,
+            shift.jobs[game.job_index].destination,
         );
-        if (game.job_state == .delivered and
-            game.job_index + 1 < jobs_data.len)
-        {
-            game.job_index += 1;
-            game.pallet = palletForJob(jobs_data[game.job_index]);
-            game.job_state = .waiting_for_pickup;
-            game.job_elapsed_seconds = 0;
+
+        if (game.job_state == .delivered) {
+            if (game.job_index + 1 < shift.jobs.len) {
+                game.job_index += 1;
+                game.pallet = palletForJob(shift.jobs[game.job_index]);
+                game.job_state = .waiting_for_pickup;
+            } else {
+                game.shift_result = scoring.calculate(
+                    shift.scoring,
+                    game.shift_elapsed_seconds,
+                    shift.jobs.len,
+                    game.collision_impacts,
+                );
+                game.flow_state = .shift_results;
+            }
         }
     }
 
@@ -404,12 +333,100 @@ fn steeringRatioMenuItemSelected(userdata: ?*anyopaque) callconv(.c) void {
 }
 
 fn resetCurrentJob(game: *Game) void {
+    const shift = activeShift(game);
     game.restart_requested = false;
-    game.forklift.reset(initial_forklift_position);
+    game.forklift.reset(ActiveStage.forklift_spawn);
     game.camera = .{};
-    game.pallet = palletForJob(jobs_data[game.job_index]);
+    game.pallet = palletForJob(shift.jobs[game.job_index]);
     game.job_state = .waiting_for_pickup;
-    game.job_elapsed_seconds = 0;
+}
+
+fn updateShiftResults(game: *Game, pushed: pdapi.PDButtons) void {
+    if (pushed & pdapi.BUTTON_A != 0) {
+        game.flow_state = .title;
+    }
+}
+
+fn drawShiftResults(game: *Game) void {
+    const result = game.shift_result orelse return;
+    const shift = activeShift(game);
+    const playdate = game.playdate;
+
+    playdate.graphics.clear(@intCast(@intFromEnum(
+        pdapi.LCDSolidColor.ColorWhite,
+    )));
+
+    const heading = "SHIFT COMPLETE";
+    _ = playdate.graphics.drawText(heading.ptr, heading.len, .UTF8Encoding, 118, 24);
+
+    const text = std.fmt.bufPrint(&game.debug_buffer, "{s}\ntime: {d:.1}s\njobs: {d}/{d}\ndamage: {d}\ntime bonus: {d}\npoints: {d}\n\nA: Continue", .{
+        shift.title,
+        result.elapsed_seconds,
+        result.completed_jobs,
+        shift.jobs.len,
+        result.collision_impacts,
+        result.time_bonus,
+        result.points,
+    }) catch unreachable;
+
+    _ = playdate.graphics.drawText(
+        text.ptr,
+        text.len,
+        .UTF8Encoding,
+        32,
+        56,
+    );
+}
+
+fn drawTitle(game: *Game) void {
+    const playdate = game.playdate;
+    playdate.graphics.clear(@intCast(@intFromEnum(
+        pdapi.LCDSolidColor.ColorWhite,
+    )));
+
+    const title = "FORKLIFT CERTIFIED";
+    const prompt = "A: Continue Main Game";
+
+    _ = playdate.graphics.drawText(
+        title.ptr,
+        title.len,
+        .UTF8Encoding,
+        72,
+        88,
+    );
+    _ = playdate.graphics.drawText(
+        prompt.ptr,
+        prompt.len,
+        .UTF8Encoding,
+        88,
+        136,
+    );
+}
+
+fn drawBriefing(game: *Game) void {
+    const playdate = game.playdate;
+    const pages = activeShift(game).opening_briefing.pages;
+    const page = pages[game.briefing_page_index];
+    const prompt = if (game.briefing_page_index + 1 < pages.len)
+        "A: Next"
+    else
+        "A: Start Shift";
+
+    playdate.graphics.clear(@intCast(@intFromEnum(
+        pdapi.LCDSolidColor.ColorWhite,
+    )));
+    playdate.graphics.drawRect(
+        8,
+        48,
+        384,
+        144,
+        @intCast(@intFromEnum(pdapi.LCDSolidColor.ColorBlack)),
+    );
+
+    const boss = "BOSS";
+    _ = playdate.graphics.drawText(boss.ptr, boss.len, .UTF8Encoding, 24, 64);
+    _ = playdate.graphics.drawText(page.ptr, page.len, .UTF8Encoding, 24, 96);
+    _ = playdate.graphics.drawText(prompt.ptr, prompt.len, .UTF8Encoding, 24, 168);
 }
 
 fn draw(game: *Game) void {
@@ -431,28 +448,20 @@ fn draw(game: *Game) void {
     else
         camera.depth(game.forklift.position, game.camera);
 
-    warehouse.draw(&renderer, .before_actors, entity_depth);
+    ActiveStage.warehouse.draw(&renderer, .before_actors, entity_depth);
 
-    if (stress_mode) {
-        for (stress_racks) |rack| {
-            renderer.rackBack(rack);
-            renderer.rackFront(rack);
-        }
-    }
+    const shift = activeShift(game);
+    renderer.destination(shift.jobs[game.job_index].destination);
 
-    renderer.destination(jobs_data[game.job_index].destination);
-
-    if (stress_mode) {
-        for (stress_pallets) |pallet| {
-            renderer.palletShadow(pallet);
-            renderer.pallet(pallet);
-        }
+    for (ActiveStage.decorative_pallets) |pallet| {
+        renderer.palletShadow(pallet);
+        renderer.pallet(pallet);
     }
     renderer.palletShadow(game.pallet);
     renderer.pallet(game.pallet);
     renderer.forklift(game.forklift);
 
-    warehouse.draw(&renderer, .after_actors, entity_depth);
+    ActiveStage.warehouse.draw(&renderer, .after_actors, entity_depth);
 
     const job_label = switch (game.job_state) {
         .waiting_for_pickup => "PICK UP PALLET",
@@ -472,13 +481,13 @@ fn draw(game: *Game) void {
         "job={s}\ntime={d:.1}\npickup={}\ncarried={}\nangle={d:.0} depth={d:.1}\nfork_z={d:.0}\nframe={d:.1}ms\nsubmit={d} cull={d}\npasses={d}",
         .{
             job_label,
-            game.job_elapsed_seconds,
+            game.shift_elapsed_seconds,
             pickup.valid and game.forklift.fork_height == .floor,
             game.pallet.state == .carried,
             pickup.angle_error_rad * 180.0 / std.math.pi,
             pickup.insertion_depth,
             vehicle.forkZ(game.forklift.fork_height),
-            game.fame_ms,
+            game.frame_ms,
             render_stats.submitted,
             render_stats.culled,
             render_passes,
@@ -491,40 +500,5 @@ fn draw(game: *Game) void {
 
 fn forkliftCollides(forklift: vehicle.Forklift, pallet: cargo.Pallet) bool {
     const carried = if (pallet.state == .carried) pallet else null;
-    if (warehouse.collides(forklift, carried)) return true;
-
-    if (!stress_mode) return false;
-
-    for (stress_obstacles[normal_obstacles.len..]) |obstacle| {
-        if (collision.obbOverlapsRect(
-            vehicle.bodyCollisionCenter(forklift),
-            vehicle.body_half_length,
-            vehicle.body_half_width,
-            forklift.heading_rad,
-            obstacle,
-        )) return true;
-        if (carried) |carried_pallet| {
-            if (collision.obbOverlapsRect(
-                carried_pallet.position,
-                carried_pallet.footprint.half_length,
-                carried_pallet.footprint.half_width,
-                carried_pallet.heading_rad,
-                obstacle,
-            )) return true;
-        }
-    }
-    return false;
-}
-
-fn palletFitsShelf(
-    pallet: cargo.Pallet,
-    shelf: Shelf,
-) bool {
-    return collision.obbContainedInRect(
-        pallet.position,
-        pallet.footprint.half_length,
-        pallet.footprint.half_width,
-        pallet.heading_rad,
-        shelf.zone,
-    );
+    return ActiveStage.warehouse.collides(forklift, carried);
 }

@@ -5,3 +5,5 @@ zig-cache
 *.swp
 .DS_Store
 .sentry-native
+docs/
+.gsd/
