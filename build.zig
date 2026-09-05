@@ -9,6 +9,16 @@ pub fn build(b: *std.Build) !void {
     const pdx_file_name = name ++ ".pdx";
     const optimize = b.standardOptimizeOption(.{});
 
+    const test_module = b.createModule(.{
+        .root_source_file = b.path("src/test_root.zig"),
+        .target = b.graph.host,
+        .optimize = optimize,
+    });
+    const tests = b.addTest(.{ .root_module = test_module });
+    const run_tests = b.addRunArtifact(tests);
+    const test_step = b.step("test", "Run host unit tests");
+    test_step.dependOn(&run_tests.step);
+
     const writer = b.addWriteFiles();
     const source_dir = writer.getDirectory();
     writer.step.name = "write source directory";

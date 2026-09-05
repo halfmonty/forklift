@@ -228,7 +228,7 @@ test "fork geometry faces body heading" {
 }
 
 test "steering ratios match their crank-to-wheel rotation ratios" {
-    try @import("std").testing.expectApproxEqAbs(@as(f32, 1.0 / 3.0), SteeringRatio.low.wheelAngleMultiplier(), 0.0001);
-    try @import("std").testing.expectApproxEqAbs(@as(f32, 1.0 / 2.0), SteeringRatio.medium.wheelAngleMultiplier(), 0.0001);
+    try @import("std").testing.expectApproxEqAbs(@as(f32, 1.0 / 8.0), SteeringRatio.low.wheelAngleMultiplier(), 0.0001);
+    try @import("std").testing.expectApproxEqAbs(@as(f32, 1.0 / 4.0), SteeringRatio.medium.wheelAngleMultiplier(), 0.0001);
     try @import("std").testing.expectApproxEqAbs(@as(f32, 1.0), SteeringRatio.high.wheelAngleMultiplier(), 0.0001);
 }

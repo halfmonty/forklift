@@ -34,3 +34,27 @@ pub fn calculate(
         .points = if (penalty >= subtotal) 0 else subtotal - penalty,
     };
 }
+
+test "time bonus rounds down to completed seconds" {
+    const result = calculate(.{
+        .completion_points = 100,
+        .target_time_seconds = 10,
+        .time_bonus_per_second = 3,
+        .collision_penalty = 25,
+    }, 9.5, 4, 0);
+
+    try @import("std").testing.expectEqual(@as(u32, 1), result.time_bonus);
+    try @import("std").testing.expectEqual(@as(u32, 101), result.points);
+}
+
+test "collisions cannot reduce shift points below zero" {
+    const result = calculate(.{
+        .completion_points = 100,
+        .target_time_seconds = 10,
+        .time_bonus_per_second = 10,
+        .collision_penalty = 75,
+    }, 12, 4, 2);
+
+    try @import("std").testing.expectEqual(@as(u32, 0), result.time_bonus);
+    try @import("std").testing.expectEqual(@as(u32, 0), result.points);
+}

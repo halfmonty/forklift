@@ -8,14 +8,11 @@ const jobs = @import("../sim/jobs.zig");
 const render = @import("../render/renderer.zig");
 const audio = @import("../audio/audio.zig");
 const pdna_effects = @import("../audio/pdna_effects.zig");
-const training_facility = @import("../content/training_facility.zig");
-const stress_test = @import("../content/stress_test.zig");
+const stages = @import("../content/stages.zig");
 const campaign = @import("campaign.zig");
 const scoring = @import("scoring.zig");
 const input = @import("input.zig");
 
-const use_stress_stage = false;
-const ActiveStage = if (use_stress_stage) stress_test else training_facility;
 const render_cull_margin: f32 = 50;
 const impact_rearm_distance: f32 = 12;
 
@@ -23,10 +20,6 @@ const pickup_tuning = cargo.PickupTuning{
     .max_angle_error_rad = 0.4,
     .tine_lateral_tolerance = 3,
     .minimum_insertion = 18,
-};
-
-const campaign_data = campaign.CampaignDefinition{
-    .stages = &[_]campaign.StageDefinition{ActiveStage.stage},
 };
 
 fn palletForJob(job: jobs.JobDefinition) cargo.Pallet {
@@ -40,18 +33,22 @@ fn palletForJob(job: jobs.JobDefinition) cargo.Pallet {
 }
 
 fn activeShift(game: *const Game) *const campaign.ShiftDefinition {
-    return &campaign_data.stages[game.stage_index].shifts[game.shift_index];
+    return &stages.active_campaign.stages[game.stage_index].shifts[game.shift_index];
+}
+
+fn activeStageId(game: *const Game) campaign.StageId {
+    return stages.active_campaign.stages[game.stage_index].id;
 }
 
 pub const Game = struct {
     playdate: *pdapi.PlaydateAPI,
     audio: audio.Audio,
     font: *pdapi.LCDFont,
-    forklift: vehicle.Forklift = .{ .position = ActiveStage.forklift_spawn },
+    forklift: vehicle.Forklift = .{ .position = stages.forkliftSpawn(stages.initial_stage_id) },
     debug_buffer: [192]u8 = undefined,
     camera: camera.Camera = .{},
     job_index: usize = 0,
-    pallet: cargo.Pallet = palletForJob(ActiveStage.shift.jobs[0]),
+    pallet: cargo.Pallet = palletForJob(stages.initial_shift.jobs[0]),
     job_state: jobs.JobState = .waiting_for_pickup,
     shift_elapsed_seconds: f32 = 0,
     collision_impacts: u32 = 0,
@@ -168,7 +165,7 @@ pub const Game = struct {
             }
         }
 
-        if (forkliftCollides(game.forklift, game.pallet)) {
+        if (forkliftCollides(activeStageId(game), game.forklift, game.pallet)) {
             if (game.impact_origin == null) {
                 game.collision_impacts += 1;
                 game.impact_origin = previous_position;
@@ -197,8 +194,10 @@ pub const Game = struct {
         if (!rotate_view_pressed and frame_input.pushed & pdapi.BUTTON_B != 0 and game.pallet.state == .carried) {
             if (game.forklift.fork_height == .floor) {
                 cargo.drop(&game.pallet);
-            } else if (game.forklift.fork_height == .rack_low and ActiveStage.palletFitsRackLowShelf(game.pallet)) {
-                cargo.dropAt(&game.pallet, ActiveStage.rack_low_support_z);
+            } else if (game.forklift.fork_height == .rack_low) {
+                if (stages.rackLowDropSupport(activeStageId(game), game.pallet)) |support_z| {
+                    cargo.dropAt(&game.pallet, support_z);
+                }
             }
         }
 
@@ -223,7 +222,7 @@ pub const Game = struct {
             }
         }
 
-        camera.follow(&game.camera, game.forklift.position, ActiveStage.world_size);
+        camera.follow(&game.camera, game.forklift.position, stages.worldSize(activeStageId(game)));
         draw(game);
         return 1;
     }
@@ -258,7 +257,7 @@ fn updateBriefing(game: *Game, pushed: pdapi.PDButtons) void {
 fn resetCurrentJob(game: *Game) void {
     const shift = activeShift(game);
     game.restart_requested = false;
-    game.forklift.reset(ActiveStage.forklift_spawn);
+    game.forklift.reset(stages.forkliftSpawn(activeStageId(game)));
     game.camera = .{};
     game.pallet = palletForJob(shift.jobs[game.job_index]);
     game.job_state = .waiting_for_pickup;
@@ -317,17 +316,15 @@ fn draw(game: *Game) void {
         @max(camera.depth(game.forklift.position, game.camera), camera.depth(game.pallet.position, game.camera))
     else
         camera.depth(game.forklift.position, game.camera);
-    ActiveStage.warehouse.draw(&renderer, .before_actors, entity_depth);
+    const stage_id = activeStageId(game);
+    stages.drawWarehouse(stage_id, &renderer, .before_actors, entity_depth);
     const shift = activeShift(game);
     renderer.destination(shift.jobs[game.job_index].destination);
-    for (ActiveStage.decorative_pallets) |pallet| {
-        renderer.palletShadow(pallet);
-        renderer.pallet(pallet);
-    }
+    stages.drawDecorativePallets(stage_id, &renderer);
     renderer.palletShadow(game.pallet);
     renderer.pallet(game.pallet);
     renderer.forklift(game.forklift);
-    ActiveStage.warehouse.draw(&renderer, .after_actors, entity_depth);
+    stages.drawWarehouse(stage_id, &renderer, .after_actors, entity_depth);
     const job_label = switch (game.job_state) {
         .waiting_for_pickup => "PICK UP PALLET",
         .carrying => "DELIVER PALLET",
@@ -353,7 +350,11 @@ fn draw(game: *Game) void {
     playdate.system.drawFPS(320, 8);
 }
 
-fn forkliftCollides(forklift: vehicle.Forklift, pallet: cargo.Pallet) bool {
+fn forkliftCollides(
+    stage_id: campaign.StageId,
+    forklift: vehicle.Forklift,
+    pallet: cargo.Pallet,
+) bool {
     const carried = if (pallet.state == .carried) pallet else null;
-    return ActiveStage.warehouse.collides(forklift, carried);
+    return stages.collides(stage_id, forklift, carried);
 }

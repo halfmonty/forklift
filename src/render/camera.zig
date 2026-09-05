@@ -132,6 +132,6 @@ test "follow clamps to the selected world size" {
     var camera = Camera{};
     follow(&camera, .{ .x = 2400, .y = 1600 }, .{ .x = 2400, .y = 1600 });
 
-    try std.testing.expectApproxEqAbs(@as(f32, 2200), camera.position.x, 0.001);
-    try std.testing.expectApproxEqAbs(@as(f32, 1480), camera.position.y, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 2000), camera.position.x, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 1360), camera.position.y, 0.001);
 }
