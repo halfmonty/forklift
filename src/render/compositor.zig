@@ -57,6 +57,7 @@ pub const RenderPartKind = enum {
 
 pub const RenderPart = struct {
     kind: RenderPartKind,
+    ground_anchor: math2.Vec2,
     depth: f32,
     occlusion_z: f32,
     local_order: u8,
@@ -196,6 +197,19 @@ fn buildSurfaceFragments(
     var output_len: usize = 0;
     for (surfaces) |surface| {
         const range = surfaceDepthRange(surface, camera_state);
+        if (stackedSurfaceForceDepth(surface, surfaces, parts)) |part_depth| {
+            appendSurfaceFragment(
+                output,
+                &output_len,
+                surface,
+                range.min,
+                range.max,
+                true,
+                true,
+                forcedStackSortDepth(surface, surfaces, part_depth),
+            );
+            continue;
+        }
         var band_start = range.min;
         var first = true;
 
@@ -209,6 +223,7 @@ fn buildSurfaceFragments(
                 depth,
                 first,
                 false,
+                null,
             );
             band_start = depth;
             first = false;
@@ -222,6 +237,7 @@ fn buildSurfaceFragments(
             range.max,
             first,
             true,
+            null,
         );
     }
     return output_len;
@@ -235,6 +251,7 @@ fn appendSurfaceFragment(
     depth_max: f32,
     draw_legs_before: bool,
     draw_front_legs_after: bool,
+    forced_sort_depth: ?f32,
 ) void {
     if (output_len.* == output.len) {
         @panic("opaque surface fragment capacity exceeded");
@@ -243,11 +260,56 @@ fn appendSurfaceFragment(
         .surface = surface,
         .depth_min = depth_min,
         .depth_max = depth_max,
-        .sort_depth = (depth_min + depth_max) * 0.5,
+        .sort_depth = if (forced_sort_depth) |depth|
+            depth
+        else
+            (depth_min + depth_max) * 0.5,
         .draw_legs_before = draw_legs_before,
         .draw_front_legs_after = draw_front_legs_after,
     };
     output_len.* += 1;
+}
+
+fn stackedSurfaceForceDepth(
+    surface: OpaqueSurface,
+    surfaces: []const OpaqueSurface,
+    parts: *const [5]RenderPart,
+) ?f32 {
+    var result: ?f32 = null;
+    for (surfaces) |candidate| {
+        if (!sameSurfaceFootprint(surface, candidate)) continue;
+        if (candidate.support_z < surface.support_z) continue;
+        for (parts) |part| {
+            if (!surfaceOccludesPart(candidate, part.occlusion_z)) continue;
+            if (!pointInsideRect(part.ground_anchor, candidate.bounds)) continue;
+            result = if (result) |current| @max(current, part.depth) else part.depth;
+        }
+    }
+    return result;
+}
+
+fn forcedStackSortDepth(
+    surface: OpaqueSurface,
+    surfaces: []const OpaqueSurface,
+    part_depth: f32,
+) f32 {
+    var lower_levels: f32 = 1;
+    for (surfaces) |candidate| {
+        if (!sameSurfaceFootprint(surface, candidate)) continue;
+        if (candidate.support_z < surface.support_z) lower_levels += 1;
+    }
+    return part_depth + lower_levels * 0.0001;
+}
+
+fn sameSurfaceFootprint(left: OpaqueSurface, right: OpaqueSurface) bool {
+    const a = left.bounds;
+    const b = right.bounds;
+    return a.x == b.x and a.y == b.y and a.width == b.width and a.height == b.height;
+}
+
+fn pointInsideRect(point: math2.Vec2, rect: collision.Rect) bool {
+    return point.x >= rect.x and point.x <= rect.x + rect.width and
+        point.y >= rect.y and point.y <= rect.y + rect.height;
 }
 
 fn sortDepths(depths: []f32) void {
@@ -291,30 +353,35 @@ fn dynamicParts(
     return .{
         .{
             .kind = .forklift_base,
+            .ground_anchor = body_center,
             .depth = base_depth,
             .occlusion_z = 0,
             .local_order = 0,
         },
         .{
             .kind = .forklift_canopy,
+            .ground_anchor = canopy_center,
             .depth = canopy_depth,
             .occlusion_z = 0,
             .local_order = if (facing_camera) 1 else 4,
         },
         .{
             .kind = .forklift_mast,
+            .ground_anchor = mast_center,
             .depth = mast_depth,
             .occlusion_z = 0,
             .local_order = if (facing_camera) 2 else 3,
         },
         .{
             .kind = .forklift_forks,
+            .ground_anchor = fork_center,
             .depth = fork_depth,
             .occlusion_z = vehicle.forkZ(forklift.fork_height),
             .local_order = if (facing_camera) 3 else 1,
         },
         .{
             .kind = .pallet,
+            .ground_anchor = pallet.position,
             .depth = if (pallet.state == .carried)
                 fork_depth
             else
@@ -717,7 +784,10 @@ test "diagonal shelf crossing component depths emits contiguous fragments" {
         .support_z = vehicle.forkZ(.rack_low),
     }};
     const camera_state = camera.Camera{ .yaw_rad = std.math.pi / 4.0 };
-    const actor_position = math2.Vec2{ .x = 10, .y = 10 };
+    // The actor crosses the shelf's depth span at diagonal yaw without being
+    // beneath its footprint, so it requires depth fragments rather than the
+    // under-shelf height rule.
+    const actor_position = math2.Vec2{ .x = 22, .y = 0 };
     var sink = FragmentTestSink{};
 
     compose(
@@ -772,4 +842,75 @@ test "mast shelf ordering uses mast position rather than rear axle" {
         .{ .part = .forklift_mast },
     ).?;
     try std.testing.expect(surface_index < mast_index);
+}
+
+const UnderShelfTestSink = struct {
+    surfaces: [8]SurfaceFragment = undefined,
+    surface_len: usize = 0,
+    parts: [16]RenderPartKind = undefined,
+    part_len: usize = 0,
+    draws: [24]TestDraw = undefined,
+    draw_len: usize = 0,
+
+    pub fn drawSurface(self: *UnderShelfTestSink, fragment: SurfaceFragment) void {
+        self.surfaces[self.surface_len] = fragment;
+        self.surface_len += 1;
+        self.draws[self.draw_len] = .{ .surface = fragment.surface.support_z };
+        self.draw_len += 1;
+    }
+
+    pub fn drawPart(self: *UnderShelfTestSink, part: RenderPart) void {
+        self.parts[self.part_len] = part.kind;
+        self.part_len += 1;
+        self.draws[self.draw_len] = .{ .part = part.kind };
+        self.draw_len += 1;
+    }
+};
+
+test "low pallet inside high shelf footprint is fully occluded by high shelf" {
+    const rack_bounds = collision.Rect{ .x = 80, .y = 80, .width = 40, .height = 20 };
+    var surfaces = [_]OpaqueSurface{
+        .{ .bounds = rack_bounds, .support_z = vehicle.forkZ(.rack_low) },
+        .{ .bounds = rack_bounds, .support_z = vehicle.forkZ(.rack_high) },
+    };
+    const pallet = cargo.Pallet{
+        .position = .{ .x = 100, .y = 90 },
+        .support_z = vehicle.forkZ(.rack_low),
+        .z = vehicle.forkZ(.rack_low),
+    };
+    var sink = UnderShelfTestSink{};
+
+    compose(
+        .{ .position = .{ .x = 300, .y = 20 } },
+        pallet,
+        &surfaces,
+        .{},
+        &sink,
+    );
+
+    var high_fragment_count: usize = 0;
+    var high_fragment_index: usize = 0;
+    for (sink.surfaces[0..sink.surface_len], 0..) |fragment, index| {
+        if (fragment.surface.support_z == vehicle.forkZ(.rack_high)) {
+            high_fragment_count += 1;
+            high_fragment_index = index;
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 1), high_fragment_count);
+    try std.testing.expectEqual(vehicle.forkZ(.rack_high), sink.surfaces[high_fragment_index].surface.support_z);
+
+    const low_surface = lastTestDrawIndex(
+        sink.draws[0..sink.draw_len],
+        .{ .surface = vehicle.forkZ(.rack_low) },
+    ).?;
+    const pallet_index = lastTestDrawIndex(
+        sink.draws[0..sink.draw_len],
+        .{ .part = .pallet },
+    ).?;
+    const high_surface = lastTestDrawIndex(
+        sink.draws[0..sink.draw_len],
+        .{ .surface = vehicle.forkZ(.rack_high) },
+    ).?;
+    try std.testing.expect(low_surface < pallet_index);
+    try std.testing.expect(pallet_index < high_surface);
 }
