@@ -9,6 +9,12 @@ const collision = @import("../sim/collision.zig");
 
 const black: pdapi.LCDColor = @intCast(@intFromEnum(pdapi.LCDSolidColor.ColorBlack));
 
+const RackEdge = struct {
+    start: math2.Vec2,
+    end: math2.Vec2,
+    outward_normal: math2.Vec2,
+};
+
 pub const RenderStats = struct {
     submitted: usize = 0,
     culled: usize = 0,
@@ -70,18 +76,60 @@ pub const Renderer = struct {
         drawTallBox(self.playdate, position, self.camera_state, black);
     }
 
+    pub fn floorExpansionJoints(
+        self: *Renderer,
+        world_size: math2.Vec2,
+        cell_size: math2.Vec2,
+    ) void {
+        const bounds = camera.visibleWorldBounds(self.camera_state);
+        const minimum_x = @max(0, bounds.min.x - self.cull_margin);
+        const maximum_x = @min(world_size.x, bounds.max.x + self.cull_margin);
+        const minimum_y = @max(0, bounds.min.y - self.cull_margin);
+        const maximum_y = @min(world_size.y, bounds.max.y + self.cull_margin);
+
+        var x = @max(0, @floor(minimum_x / cell_size.x) * cell_size.x);
+        while (x <= maximum_x) : (x += cell_size.x) {
+            line(
+                self.playdate,
+                projection.project(.{ .x = x, .y = 0 }, 0, self.camera_state, projection.default_tuning),
+                projection.project(.{ .x = x, .y = world_size.y }, 0, self.camera_state, projection.default_tuning),
+                1,
+                black,
+            );
+        }
+
+        var y = @max(0, @floor(minimum_y / cell_size.y) * cell_size.y);
+        while (y <= maximum_y) : (y += cell_size.y) {
+            line(
+                self.playdate,
+                projection.project(.{ .x = 0, .y = y }, 0, self.camera_state, projection.default_tuning),
+                projection.project(.{ .x = world_size.x, .y = y }, 0, self.camera_state, projection.default_tuning),
+                1,
+                black,
+            );
+        }
+    }
+
     pub fn rackBack(self: *Renderer, rack: collision.Rect) void {
         if (!self.acceptsRect(rack)) return;
         drawRackBack(self.playdate, rack, self.camera_state, black);
     }
 
-    pub fn rackFront(self: *Renderer, rack: collision.Rect) void {
+    pub fn rackFront(
+        self: *Renderer,
+        rack: collision.Rect,
+        actor_depth: f32,
+        draw_before_actors: bool,
+    ) void {
         if (!self.acceptsRect(rack)) return;
-        drawRackFront(self.playdate, rack, self.camera_state, black);
-    }
-
-    pub fn rackFrontDepth(self: Renderer, rack: collision.Rect) f32 {
-        return rackFrontDepthRaw(rack, self.camera_state);
+        drawRackFront(
+            self.playdate,
+            rack,
+            self.camera_state,
+            actor_depth,
+            draw_before_actors,
+            black,
+        );
     }
 
     pub fn obstacle(self: *Renderer, obstacle_rect: collision.Rect) void {
@@ -200,7 +248,7 @@ pub fn drawForklift(
     line(playdate, left_base, left_tip, 3, black);
     line(playdate, right_base, right_tip, 3, black);
 
-    const mast_top_z: f32 = 40;
+    const mast_top_z: f32 = 68;
 
     const left_mast_base = projection.project(
         forks.left_base,
@@ -708,47 +756,66 @@ pub fn drawRackBack(
     drawProjectedRect(playdate, rack, 0, camera_state, 1, color);
 }
 
-fn rackFrontEdge(
-    rack: collision.Rect,
-    view: camera.View,
-) [2]math2.Vec2 {
-    return switch (view) {
-        .north => .{
-            .{ .x = rack.x, .y = rack.y + rack.height },
-            .{ .x = rack.x + rack.width, .y = rack.y +
-                rack.height },
-        },
-        .east => .{
-            .{ .x = rack.x + rack.width, .y = rack.y +
-                rack.height },
-            .{ .x = rack.x + rack.width, .y = rack.y },
-        },
-        .south => .{
-            .{ .x = rack.x + rack.width, .y = rack.y },
-            .{ .x = rack.x, .y = rack.y },
-        },
-        .west => .{
-            .{ .x = rack.x, .y = rack.y },
-            .{ .x = rack.x, .y = rack.y + rack.height },
-        },
+fn rackEdges(rack: collision.Rect) [4]RackEdge {
+    return .{
+        .{ .start = .{ .x = rack.x, .y = rack.y }, .end = .{ .x = rack.x + rack.width, .y = rack.y }, .outward_normal = .{ .x = 0, .y = -1 } },
+        .{ .start = .{ .x = rack.x + rack.width, .y = rack.y }, .end = .{ .x = rack.x + rack.width, .y = rack.y + rack.height }, .outward_normal = .{ .x = 1, .y = 0 } },
+        .{ .start = .{ .x = rack.x + rack.width, .y = rack.y + rack.height }, .end = .{ .x = rack.x, .y = rack.y + rack.height }, .outward_normal = .{ .x = 0, .y = 1 } },
+        .{ .start = .{ .x = rack.x, .y = rack.y + rack.height }, .end = .{ .x = rack.x, .y = rack.y }, .outward_normal = .{ .x = -1, .y = 0 } },
     };
 }
 
-fn rackFrontDepthRaw(
-    rack: collision.Rect,
-    camera_state: camera.Camera,
-) f32 {
-    const edge = rackFrontEdge(rack, camera_state.view);
-    return camera.depth(
-        .{
-            .x = (edge[0].x + edge[1].x) * 0.5,
-            .y = (edge[0].y + edge[1].y) * 0.5,
-        },
-        camera_state,
-    );
+fn rackEdgeFacesCamera(edge: RackEdge, camera_state: camera.Camera) bool {
+    const camera_front = math2.Vec2{
+        .x = @sin(camera_state.yaw_rad),
+        .y = @cos(camera_state.yaw_rad),
+    };
+    return math2.dot(edge.outward_normal, camera_front) > 0.001;
 }
 
-pub fn drawRackFront(
+fn rackEdgeDepth(edge: RackEdge, camera_state: camera.Camera) f32 {
+    return camera.depth(.{
+        .x = (edge.start.x + edge.end.x) * 0.5,
+        .y = (edge.start.y + edge.end.y) * 0.5,
+    }, camera_state);
+}
+
+fn shouldDrawRackPart(actor_depth: f32, rack_part_depth: f32, draw_before_actors: bool) bool {
+    return if (draw_before_actors) actor_depth >= rack_part_depth else actor_depth < rack_part_depth;
+}
+
+fn drawRackFront(
+    playdate: *pdapi.PlaydateAPI,
+    rack: collision.Rect,
+    camera_state: camera.Camera,
+    actor_depth: f32,
+    draw_before_actors: bool,
+    color: pdapi.LCDColor,
+) void {
+    const edges = rackEdges(rack);
+    var maximum_facing_depth: ?f32 = null;
+    for (edges) |edge| {
+        if (!rackEdgeFacesCamera(edge, camera_state)) continue;
+        const edge_depth = rackEdgeDepth(edge, camera_state);
+        maximum_facing_depth = if (maximum_facing_depth) |maximum|
+            @max(maximum, edge_depth)
+        else
+            edge_depth;
+    }
+
+    const front_depth = maximum_facing_depth orelse unreachable;
+    if (shouldDrawRackPart(actor_depth, front_depth, draw_before_actors)) {
+        drawRackTop(playdate, rack, camera_state, color);
+    }
+
+    for (edges) |edge| {
+        if (!rackEdgeFacesCamera(edge, camera_state)) continue;
+        if (!shouldDrawRackPart(actor_depth, rackEdgeDepth(edge, camera_state), draw_before_actors)) continue;
+        drawRackWall(playdate, edge, camera_state, color);
+    }
+}
+
+fn drawRackTop(
     playdate: *pdapi.PlaydateAPI,
     rack: collision.Rect,
     camera_state: camera.Camera,
@@ -756,35 +823,6 @@ pub fn drawRackFront(
 ) void {
     const white: pdapi.LCDColor =
         @intCast(@intFromEnum(pdapi.LCDSolidColor.ColorWhite));
-
-    const front_edge = rackFrontEdge(rack, camera_state.view);
-    const front_left_world = front_edge[0];
-    const front_right_world = front_edge[1];
-
-    const ground_left = projection.project(
-        front_left_world,
-        0,
-        camera_state,
-        projection.default_tuning,
-    );
-    const ground_right = projection.project(
-        front_right_world,
-        0,
-        camera_state,
-        projection.default_tuning,
-    );
-    const top_left = projection.project(
-        front_left_world,
-        80,
-        camera_state,
-        projection.default_tuning,
-    );
-    const top_right = projection.project(
-        front_right_world,
-        80,
-        camera_state,
-        projection.default_tuning,
-    );
 
     const top = projectedRectCorners(rack, 80, camera_state);
 
@@ -810,6 +848,20 @@ pub fn drawRackFront(
     for (0..4) |index| {
         line(playdate, top[index], top[(index + 1) % 4], 2, color);
     }
+}
+
+fn drawRackWall(
+    playdate: *pdapi.PlaydateAPI,
+    edge: RackEdge,
+    camera_state: camera.Camera,
+    color: pdapi.LCDColor,
+) void {
+    const white: pdapi.LCDColor =
+        @intCast(@intFromEnum(pdapi.LCDSolidColor.ColorWhite));
+    const ground_left = projection.project(edge.start, 0, camera_state, projection.default_tuning);
+    const ground_right = projection.project(edge.end, 0, camera_state, projection.default_tuning);
+    const top_left = projection.project(edge.start, 80, camera_state, projection.default_tuning);
+    const top_right = projection.project(edge.end, 80, camera_state, projection.default_tuning);
 
     playdate.graphics.fillTriangle(
         @intFromFloat(top_left.x),
@@ -834,6 +886,24 @@ pub fn drawRackFront(
     line(playdate, ground_left, ground_right, 3, color);
     line(playdate, ground_left, top_left, 2, color);
     line(playdate, ground_right, top_right, 2, color);
+}
+
+test "rack-facing edges follow camera yaw" {
+    const rack = collision.Rect{ .x = 10, .y = 20, .width = 30, .height = 40 };
+    const edges = rackEdges(rack);
+    const cases = [_]struct { yaw_rad: f32, facing: [4]bool }{
+        .{ .yaw_rad = 0, .facing = .{ false, false, true, false } },
+        .{ .yaw_rad = std.math.pi / 2.0, .facing = .{ false, true, false, false } },
+        .{ .yaw_rad = std.math.pi / 4.0, .facing = .{ false, true, true, false } },
+        .{ .yaw_rad = 3.0 * std.math.pi / 2.0, .facing = .{ false, false, false, true } },
+    };
+
+    for (cases) |case| {
+        const camera_state = camera.Camera{ .yaw_rad = case.yaw_rad };
+        for (edges, 0..) |edge, index| {
+            try std.testing.expectEqual(case.facing[index], rackEdgeFacesCamera(edge, camera_state));
+        }
+    }
 }
 
 pub fn drawObstacle(
@@ -882,5 +952,34 @@ pub fn drawShelf(
         const next = (index + 1) % 4;
         line(playdate, top[index], top[next], 2, color);
         line(playdate, ground[index], top[index], 1, color);
+    }
+}
+
+fn drawStorageRackFrame(
+    playdate: *pdapi.PlaydateAPI,
+    frame: collision.Rect,
+    top_z: f32,
+    camera_state: camera.Camera,
+    color: pdapi.LCDColor,
+) void {
+    const ground = projectedRectCorners(frame, 0, camera_state);
+    const low = projectedRectCorners(
+        frame,
+        vehicle.forkZ(.rack_low),
+        camera_state,
+    );
+    const top = projectedRectCorners(frame, top_z, camera_state);
+
+    for (0..4) |index| {
+        const next = (index + 1) % 4;
+
+        // Upright posts occupy the actual collision-frame corners.
+        line(playdate, ground[index], top[index], 2, color);
+
+        // Low shelf support beam.
+        line(playdate, low[index], low[next], 2, color);
+
+        // Top beam: same as low for a low-only rack, higher for stacked.
+        line(playdate, top[index], top[next], 2, color);
     }
 }

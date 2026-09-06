@@ -16,11 +16,11 @@
 
 **Reader:** a developer starting a fresh session on the prototype.
 
-**Action after reading:** hardware-validate M17a system-menu restart and the Low/Medium/High steering ratios, then implement M17b campaign flow before creating M18 content.
+**Action after reading:** implement and hardware-validate the continuous render-only camera orbit before expanding Training Facility content.
 
 ## Proven on hardware
 
-- Persistent crank steering is controllable. Wheelbase `28` is hardware validated. M17a adds selectable `Low` (3:1), `Medium` (2:1), and `High` (1:1) crank-to-wheel ratios; hardware selection of the final default remains pending.
+- Persistent crank steering is controllable. Wheelbase `28` is hardware validated. M17a adds selectable `Low` (8:1), `Medium` (4:1), and `High` (1:1) crank-to-wheel ratios; Medium is the default.
 - Straight driving remains possible at crank orientations `0°` and `180°`.
 - Forklift body collision uses an oriented rectangle and matches the rendered chassis more closely than the previous circle proxy.
 - Four-sided pallets can be picked up from all sides. Valid pickup attaches without a visible jump; carrying and dropping preserve alignment and heading.
@@ -39,20 +39,23 @@
 - Native pickup and fork-height effects mix with the four-track music loop at the 50 Hz cap. Successful pickups produce one effect, failed attempts are silent, and effect volume is acceptable.
 - The fork-height effect's native one-shot pitch sweep passes hardware validation during music, does not alter pickup sound, and has no frame-rate impact.
 - PDNA Toolkit song export was copied into the Zig project and runs on hardware at the 50 Hz cap with no frame-rate impact.
+- M17b campaign flow is hardware validated: title New Game/Continue selection, completed-shift save/load, promotion pages, campaign completion, and before-job boss briefings work across the Training Facility and a minimal First Warehouse stage.
 
 ## Intentional changes from the original plan
 
 - Production Blender/sprite art is deferred indefinitely. The game uses a geometry-first 2.5D visual style implemented by the renderer. Do not begin an art pipeline unless this decision changes explicitly.
 - Pallets are deliberately four-sided to support positioning and cargo-rotation mechanics. Pickup lanes are available on every side.
-- Fork-height control uses D-pad Right to raise and D-pad Left to lower. A performs pickup; B performs drop. This replaces the original M12 A/B lift-control suggestion.
-- The camera supports four cardinal render-only views: north, east, south, and west. Hold B and press Right to rotate clockwise. World coordinates, forklift physics, collision, pickup, shelf support, and heading do not rotate.
-- Arbitrary-angle camera rotation, camera smoothing, camera look-ahead, POV, and zoom are deferred. The four cardinal views solve rack accessibility without adding those systems.
+- Current fork-height control uses D-pad Right to raise and D-pad Left to lower. A picks up and B drops. M17c will replace these separate cargo actions with an A pickup/drop toggle and reserve B for camera mode.
+- The current camera supports four cardinal render-only views: north, east, south, and west. Hold B and press Right to rotate clockwise. M17c will replace this with B+D-pad cardinal snaps and B+crank arbitrary yaw.
+- Camera smoothing, camera look-ahead, POV, and zoom remain deferred.
 
-## Desired future camera enhancement
+## Continuous camera direction
 
-The desired eventual camera is continuously rotatable rather than limited to four cardinal views. The likely control is a held camera-modifier button plus crank rotation; the specific modifier button is intentionally undecided so it does not conflict with established driving, pickup, drop, or fork-height controls.
+The next camera is continuously rotatable. Hold B and turn the crank to change camera yaw; the crank must not also change steering during camera mode. Hold B and press a D-pad direction to snap to its named cardinal yaw: Up = north, Right = east, Down = south, Left = west.
 
-This remains deferred. It requires arbitrary-angle world projection, general render ordering, and rack top/side-face selection that remain correct at every yaw angle. It must stay render-only: camera rotation must never rotate or alter world-space physics, collision, pickup rules, cargo support, or vehicle heading.
+Camera yaw is render-only. It must never rotate or alter world-space physics, collision, pickup rules, cargo support, pallet orientation, forklift heading, or steering state. Releasing B returns all established driving and fork-height controls immediately.
+
+Arbitrary yaw requires general world projection, yaw-aware culling/clamping, and rack top/side-face selection that remains correct at every angle. The renderer must handle diagonal rack occlusion by drawing every camera-facing rack wall required by the yaw, rather than selecting one wall with a cardinal-view switch.
 
 ## Current implementation state
 
@@ -72,14 +75,15 @@ The camera projects all rotating world geometry through its cardinal view transf
 
 ## Next implementation slice
 
-Complete the M17a device gate, then implement M17b campaign flow:
+Implement M17c continuous camera orbit:
 
-1. Validate `Restart Job` from every current job, including while carrying.
-2. Compare Low, Medium, and High steering ratios on the existing hardware course; choose the default from that test.
-3. Add the title, briefing, shift-results, promotion, and final-completion states around the existing job loop.
-4. Save only completed-shift campaign progression. M18 will then author training and warehouse content against this foundation.
+1. Change A to the mutually exclusive pickup/drop cargo action and reserve B for camera mode.
+2. Add B+D-pad cardinal snap controls and B+crank arbitrary yaw.
+3. Generalize projection, camera bounds/culling, and rack occlusion for arbitrary yaw.
+4. Preserve render-only camera invariants under every yaw.
+5. Hardware-validate input feel, diagonal rack occlusion, cargo/shelf behavior, and ReleaseFast frame pacing.
 
-Do not expand audio, add a custom pause screen, create a generic runtime level format, procedural generation, failure states, a spatial grid, or future game modes in this slice.
+Do not combine this slice with new warehouse mechanics, new content, a generic runtime level format, procedural generation, failure states, a spatial grid, or future game modes.
 
 ## Verification baseline
 
@@ -1281,7 +1285,7 @@ campaign_complete
 
 At shift completion, unlock and save the next shift. At the final shift of a stage, show its promotion, unlock and save the next stage's first shift, then continue. At the final campaign shift, save `campaign_complete = true` and show the win state. Restarting a job never changes saved progression.
 
-Do not persist best time, high score, partial shift state, steering ratio, raw structs, or audio state in M17b. Best-score persistence and optional settings are M17c after scoring and settings values stabilize.
+Do not persist best time, high score, partial shift state, steering ratio, raw structs, or audio state in M17b. Best-score persistence and optional settings are M17d after scoring and settings values stabilize.
 
 ### Implementation order
 
@@ -1304,7 +1308,45 @@ Do not persist best time, high score, partial shift state, steering ratio, raw s
 - A test-only short campaign proves stage promotion, the `Forklift Certified` reward, next-stage unlock, and final win flow.
 - Gameplay stays at the established device frame-rate cap during normal driving and results/briefing transitions.
 
-## Deferred M17c — Optional settings and best results
+## M17c — Continuous Render-Only Camera Orbit
+
+### Goal
+
+Replace cardinal-only camera rotation with continuous render-only yaw while retaining instant cardinal snaps. The camera must become more flexible without changing any simulation result.
+
+### Controls
+
+- A is the mutually exclusive cargo action: attempt pickup when the forklift carries no pallet; attempt drop at the active fork height when it carries one.
+- Hold B plus Up/Right/Down/Left to snap camera yaw to north/east/south/west.
+- Hold B plus crank rotation to change camera yaw continuously. Start with a 1:1 crank-degree-to-camera-degree mapping and tune only after hardware testing.
+- While B is held, consume D-pad and crank input for camera mode. Do not drive, alter fork height, or alter steering state.
+
+### Technical design
+
+1. Store continuous `yaw_rad` in camera state, with north represented by `0` and cardinal snaps using exact quarter turns.
+2. Keep camera focus in world coordinates. Derive its yaw-dependent visible world extents by inverse-projecting the screen corners; use the resulting conservative world AABB for culling and world-bound clamping.
+3. Project each world point with cached yaw sine/cosine. Existing world geometry, cargo headings, and physics coordinates remain unchanged.
+4. Replace cardinal rack-front selection with projected-depth selection. At diagonal yaw, draw both camera-facing rack walls and keep the rack top surface/actor occlusion consistent.
+5. Keep all collision, pickup, shelf-support, job, cargo-follow, and vehicle modules free of camera yaw dependencies.
+
+### Host tests
+
+- Cardinal yaw exactly reproduces north/east/south/west projection results.
+- An arbitrary yaw rotates a world point around camera focus by the expected angle.
+- Culling bounds include every inverse-projected screen corner.
+- Camera yaw changes no forklift, pallet, job, collision, support-height, or heading state.
+- Rack face selection identifies the correct visible wall(s) at cardinal and diagonal yaw.
+
+### Hardware gate
+
+- A picks up when unloaded and drops when carrying; B never drops cargo.
+- B+D-pad snaps to each exact cardinal angle without moving, steering, or changing fork height.
+- B+crank rotates smoothly through a full turn without steering the vehicle.
+- Pickup, carrying, floor drop, shelf drop, collision, and job delivery remain identical at cardinal and diagonal yaw.
+- Near/far rack occlusion remains readable throughout a full orbit.
+- ReleaseFast retains the established 50 Hz cap on the representative stress scene.
+
+## Deferred M17d — Optional settings and best results
 
 - [ ] optional steering-angle indicator checkmark item
 - [ ] persist steering ratio after the preferred default is hardware selected
@@ -1350,6 +1392,34 @@ Only now scale up.
 Every new level should answer:
 
 > **What steering, route-planning, fork-height, or load-handling skill does this space exercise that an existing level does not?**
+
+## Post-M18 warehouse-mechanics backlog
+
+These are authored-content tools, not part of M17c. Introduce one mechanic at a time only after the continuous camera gate passes.
+
+### Additional shelf heights
+
+- Add `rack_high`, a second supported shelf level, and one additional discrete forklift height.
+- A high-shelf pickup/drop requires exact fork-height and full pallet support validation, using the same world-space rules as `rack_low`.
+- Avoid continuous fork elevation unless discrete heights prove insufficient.
+
+### Elevation-aware clearance obstacles
+
+- Add low-clearance obstacles that a forklift with raised forks/cargo cannot pass under, while an unloaded or lowered forklift can pass.
+- Model clearance explicitly as a world-space height band. Do not derive clearance collision from rendered pixels or camera angle.
+- Validate forklift, forks, and carried load clearance independently; the vehicle body must not gain the ability to pass through ordinary floor obstacles.
+
+### Floor pallets, boxes, and fork shove
+
+- Floor pallets and boxes block forklift body movement; the forklift must not drive through them.
+- Fully inserted forks may shove an eligible floor load in the fork-forward direction before pickup. Partial insertion and side impacts remain blocking collisions.
+- A shove/impact above a hardware-tuned speed threshold adds one damage impact. Do not add bouncing, generic rigid-body simulation, or free-form pushing in the first slice.
+
+### Empty-to-filled pallet jobs
+
+- Support empty and loaded pallet states with distinct visuals, weight/footprint data only when gameplay needs them, and explicit fill-zone destinations.
+- A job may require: collect empty pallet → place fully inside fill zone → convert to its authored loaded pallet → deliver to its final floor or shelf destination.
+- Keep the flow deterministic and authored. Do not add generic production chains, timers, random filling, or runtime scripting.
 
 ---
 

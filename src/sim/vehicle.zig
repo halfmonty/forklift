@@ -61,6 +61,7 @@ pub const ForkHeight = enum(c_int) {
     floor = 0,
     carry = 12,
     rack_low = 30,
+    rack_high = 54,
 };
 
 pub fn forkZ(height: ForkHeight) f32 {
@@ -71,7 +72,8 @@ pub fn raiseForks(forklift: *Forklift) void {
     forklift.fork_height = switch (forklift.fork_height) {
         .floor => .carry,
         .carry => .rack_low,
-        .rack_low => .rack_low,
+        .rack_low => .rack_high,
+        .rack_high => .rack_high,
     };
 }
 
@@ -80,6 +82,7 @@ pub fn lowerForks(forklift: *Forklift) void {
         .floor => .floor,
         .carry => .floor,
         .rack_low => .carry,
+        .rack_high => .rack_low,
     };
 }
 
@@ -231,4 +234,26 @@ test "steering ratios match their crank-to-wheel rotation ratios" {
     try @import("std").testing.expectApproxEqAbs(@as(f32, 1.0 / 8.0), SteeringRatio.low.wheelAngleMultiplier(), 0.0001);
     try @import("std").testing.expectApproxEqAbs(@as(f32, 1.0 / 4.0), SteeringRatio.medium.wheelAngleMultiplier(), 0.0001);
     try @import("std").testing.expectApproxEqAbs(@as(f32, 1.0), SteeringRatio.high.wheelAngleMultiplier(), 0.0001);
+}
+
+test "fork heights reach rack high and clamp at endpoints" {
+    var forklift = Forklift{ .position = .{ .x = 100, .y = 100 } };
+
+    raiseForks(&forklift);
+    raiseForks(&forklift);
+    raiseForks(&forklift);
+    try std.testing.expectEqual(ForkHeight.rack_high, forklift.fork_height);
+
+    raiseForks(&forklift);
+    try std.testing.expectEqual(ForkHeight.rack_high, forklift.fork_height);
+
+    lowerForks(&forklift);
+    try std.testing.expectEqual(ForkHeight.rack_low, forklift.fork_height);
+    lowerForks(&forklift);
+    try std.testing.expectEqual(ForkHeight.carry, forklift.fork_height);
+    lowerForks(&forklift);
+    try std.testing.expectEqual(ForkHeight.floor, forklift.fork_height);
+
+    lowerForks(&forklift);
+    try std.testing.expectEqual(ForkHeight.floor, forklift.fork_height);
 }

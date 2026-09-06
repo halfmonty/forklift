@@ -15,12 +15,14 @@ pub const StageId = enum(u8) {
     training_facility = 1,
     stress_test = 2,
     first_warehouse = 3,
+    feature_test = 4,
 };
 
 pub const ShiftId = enum(u8) {
     training_orientation = 1,
     stress_test = 2,
     first_delivery = 3,
+    feature_test = 4,
 };
 
 pub const BriefingTrigger = union(enum) {

@@ -14,6 +14,7 @@ const scoring = @import("scoring.zig");
 const input = @import("input.zig");
 const progress = @import("progress.zig");
 const progress_store = @import("progress_store.zig");
+const config = @import("../config.zig");
 
 const render_cull_margin: f32 = 50;
 const impact_rearm_distance: f32 = 12;
@@ -113,12 +114,15 @@ pub const Game = struct {
         game_audio: audio.Audio,
         font: *pdapi.LCDFont,
     ) Game {
-        const loaded = progress_store.load(
-            playdate,
-            stages.active_campaign,
-        );
+        const loaded = if (stages.skip_title_screen)
+            progress_store.LoadResult{
+                .progress = progress.Progress.initial(),
+                .exists = false,
+            }
+        else
+            progress_store.load(playdate, stages.active_campaign);
 
-        return .{
+        var game = Game{
             .playdate = playdate,
             .audio = game_audio,
             .font = font,
@@ -126,6 +130,8 @@ pub const Game = struct {
             .has_saved_progress = loaded.exists,
             .title_selection = if (loaded.exists) .continue_game else .new_game,
         };
+        if (stages.skip_title_screen) enterShift(&game, 0, 0);
+        return game;
     }
 
     pub fn requestRestart(self: *Game) void {
@@ -151,6 +157,7 @@ pub const Game = struct {
         const playdate = game.playdate;
 
         const frame_input = input.read(playdate);
+        const camera_mode = frame_input.held & pdapi.BUTTON_B != 0;
         game.frame_ms = frame_input.frame_ms;
 
         switch (game.flow_state) {
@@ -191,10 +198,10 @@ pub const Game = struct {
         vehicle.update(
             &game.forklift,
             .{
-                .crank_delta_deg = frame_input.crank_delta_deg,
+                .crank_delta_deg = if (camera_mode) 0 else frame_input.crank_delta_deg,
                 .steering_ratio = game.steering_ratio,
-                .forward = frame_input.held & pdapi.BUTTON_UP != 0,
-                .reverse = frame_input.held & pdapi.BUTTON_DOWN != 0,
+                .forward = !camera_mode and frame_input.held & pdapi.BUTTON_UP != 0,
+                .reverse = !camera_mode and frame_input.held & pdapi.BUTTON_DOWN != 0,
             },
             if (game.pallet.state == .carried)
                 game.pallet.cargo.carried_acceleration_multiplier
@@ -203,18 +210,34 @@ pub const Game = struct {
             frame_input.dt,
         );
 
-        const lateral_pressed = frame_input.pushed & (pdapi.BUTTON_LEFT | pdapi.BUTTON_RIGHT);
-        const rotate_view_pressed = frame_input.held & pdapi.BUTTON_B != 0 and
-            frame_input.pushed & pdapi.BUTTON_RIGHT != 0;
+        const lateral_pressed = frame_input.pushed &
+            (pdapi.BUTTON_LEFT | pdapi.BUTTON_RIGHT);
 
         const previous_fork_height = game.forklift.fork_height;
-        if (rotate_view_pressed) {
-            camera.rotateClockwise(&game.camera);
+        if (camera_mode) {
+            if (frame_input.pushed & pdapi.BUTTON_UP != 0) {
+                camera.snapTo(&game.camera, .north);
+            } else if (frame_input.pushed & pdapi.BUTTON_RIGHT != 0) {
+                camera.snapTo(&game.camera, .east);
+            } else if (frame_input.pushed & pdapi.BUTTON_DOWN != 0) {
+                camera.snapTo(&game.camera, .south);
+            } else if (frame_input.pushed & pdapi.BUTTON_LEFT != 0) {
+                camera.snapTo(&game.camera, .west);
+            } else {
+                camera.rotateBy(
+                    &game.camera,
+                    math2.degreesToRadians(
+                        frame_input.crank_delta_deg *
+                            config.camera_yaw_per_crank_degree,
+                    ),
+                );
+            }
         } else if (lateral_pressed & pdapi.BUTTON_RIGHT != 0) {
             vehicle.raiseForks(&game.forklift);
         } else if (lateral_pressed & pdapi.BUTTON_LEFT != 0) {
             vehicle.lowerForks(&game.forklift);
         }
+
         if (game.forklift.fork_height != previous_fork_height) {
             game.audio.play(pdna_effects.fork_height_move);
         }
@@ -239,29 +262,37 @@ pub const Game = struct {
             game.pallet = previous_pallet;
         }
 
-        const pickup_height_matches = @abs(
-            vehicle.forkZ(game.forklift.fork_height) - game.pallet.support_z,
-        ) < 0.1;
-        if (frame_input.pushed & pdapi.BUTTON_A != 0 and pickup_height_matches) {
-            if (cargo.tryPickup(&game.pallet, game.forklift, pickup_tuning)) {
-                game.audio.play(pdna_effects.pallet_engagement);
-                if (game.forklift.fork_height == .floor) game.forklift.fork_height = .carry;
+        if (frame_input.pushed & pdapi.BUTTON_A != 0) {
+            if (game.pallet.state == .carried) {
+                if (game.forklift.fork_height == .floor) {
+                    cargo.drop(&game.pallet);
+                } else if (stages.palletDropSupport(
+                    activeStageId(game),
+                    game.forklift.fork_height,
+                    game.pallet,
+                )) |support_z| {
+                    cargo.dropAt(&game.pallet, support_z);
+                }
+            } else {
+                const pickup_height_matches = @abs(
+                    vehicle.forkZ(game.forklift.fork_height) -
+                        game.pallet.support_z,
+                ) < 0.1;
+
+                if (pickup_height_matches and
+                    cargo.tryPickup(&game.pallet, game.forklift, pickup_tuning))
+                {
+                    game.audio.play(pdna_effects.pallet_engagement);
+                    if (game.forklift.fork_height == .floor) {
+                        game.forklift.fork_height = .carry;
+                    }
+                }
             }
         }
 
         if (game.pallet.state == .carried) {
             cargo.followForks(&game.pallet, game.forklift);
             game.pallet.z = vehicle.forkZ(game.forklift.fork_height);
-        }
-
-        if (!rotate_view_pressed and frame_input.pushed & pdapi.BUTTON_B != 0 and game.pallet.state == .carried) {
-            if (game.forklift.fork_height == .floor) {
-                cargo.drop(&game.pallet);
-            } else if (game.forklift.fork_height == .rack_low) {
-                if (stages.rackLowDropSupport(activeStageId(game), game.pallet)) |support_z| {
-                    cargo.dropAt(&game.pallet, support_z);
-                }
-            }
         }
 
         const shift = activeShift(game);
@@ -352,6 +383,7 @@ fn saveNextUnfinishedShift(
     stage_index: usize,
     shift_index: usize,
 ) void {
+    if (stages.skip_title_screen) return;
     const stage = stages.active_campaign.stages[stage_index];
     const shift = stage.shifts[shift_index];
     std.debug.assert(shift.stage_id == stage.id);
@@ -365,6 +397,7 @@ fn saveNextUnfinishedShift(
 }
 
 fn saveCampaignComplete(game: *Game) void {
+    if (stages.skip_title_screen) return;
     game.progress_state.campaign_complete = true;
     game.has_saved_progress = progress_store.save(game.playdate, game.progress_state);
 }

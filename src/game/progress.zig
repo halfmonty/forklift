@@ -46,6 +46,7 @@ fn stageIdFromByte(value: u8) ?campaign.StageId {
         1 => .training_facility,
         2 => .stress_test,
         3 => .first_warehouse,
+        4 => .feature_test,
         else => null,
     };
 }
@@ -55,6 +56,7 @@ fn shiftIdFromByte(value: u8) ?campaign.ShiftId {
         1 => .training_orientation,
         2 => .stress_test,
         3 => .first_delivery,
+        4 => .feature_test,
         else => null,
     };
 }
@@ -125,7 +127,11 @@ test "decode rejects corrupted magic and completion flags" {
 
 test "locationFor resolves the first active campaign shift" {
     const stages = @import("../content/stages.zig");
-    const location = locationFor(stages.active_campaign, Progress.initial()) orelse return error.TestExpectedEqual;
+    const location = locationFor(stages.active_campaign, .{
+        .next_unfinished_stage_id = stages.initial_stage_id,
+        .next_unfinished_shift_id = stages.initial_shift.id,
+        .campaign_complete = false,
+    }) orelse return error.TestExpectedEqual;
 
     try std.testing.expectEqual(@as(usize, 0), location.stage_index);
     try std.testing.expectEqual(@as(usize, 0), location.shift_index);

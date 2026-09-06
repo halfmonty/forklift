@@ -176,3 +176,13 @@ pub fn palletFitsRackLowShelf(pallet: cargo.Pallet) bool {
         rack_low_shelf.zone,
     );
 }
+
+pub fn palletDropSupport(
+    fork_height: vehicle.ForkHeight,
+    pallet: cargo.Pallet,
+) ?f32 {
+    if (fork_height == .rack_low and palletFitsRackLowShelf(pallet)) {
+        return rack_low_support_z;
+    }
+    return null;
+}
