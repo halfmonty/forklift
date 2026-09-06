@@ -65,6 +65,13 @@ const jobs_data = [_]jobs.JobDefinition{
     .{ .pallet_spawn = .{ .position = .{ .x = 600, .y = 650 } }, .destination = .{ .x = 880, .y = 100, .width = 120, .height = 120 }, .cargo = cargo.long_cargo },
 };
 
+const briefings = [_]campaign.BossMessage{
+    .{
+        .trigger = .shift_start,
+        .pages = &briefing_pages,
+    },
+};
+
 const briefing_pages = [_][]const u8{
     "Stress-test warehouse.",
     "Drive through the dense scene and monitor frame time.",
@@ -72,9 +79,10 @@ const briefing_pages = [_][]const u8{
 
 pub const shift = campaign.ShiftDefinition{
     .id = .stress_test,
+    .stage_id = .stress_test,
     .title = "Render Stress Test",
     .jobs = &jobs_data,
-    .opening_briefing = .{ .pages = &briefing_pages },
+    .briefings = &briefings,
     .scoring = .{
         .completion_points = 1_000,
         .target_time_seconds = 180,
@@ -83,12 +91,18 @@ pub const shift = campaign.ShiftDefinition{
     },
 };
 
+const promotion_pages = [_][]const u8{
+    "Stress Test complete.",
+    "You are now stress Certified.",
+};
+
 const shifts = [_]campaign.ShiftDefinition{shift};
 
 pub const stage = campaign.StageDefinition{
     .id = .stress_test,
     .title = "Render Stress Test",
     .shifts = &shifts,
+    .promotion_pages = &promotion_pages,
 };
 
 pub const decorative_pallets = [_]cargo.Pallet{

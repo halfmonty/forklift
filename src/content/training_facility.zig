@@ -50,6 +50,11 @@ const destination = collision.Rect{
     .height = 100,
 };
 
+const heavy_cargo_pages = [_][]const u8{
+    "Next job: heavy cargo.",
+    "Heavy loads accelerate more slowly.",
+};
+
 pub const Warehouse = static_level.StaticLevel(.{
     static_level.TallBox{ .position = tall_box_position },
     static_level.Rack{ .bounds = occlusion_rack },
@@ -91,31 +96,31 @@ const jobs_data = [_]jobs.JobDefinition{
         },
         .cargo = cargo.heavy_cargo,
     },
-    .{
-        .pallet_spawn = .{
-            .position = .{ .x = 1010, .y = 430 },
-            .support_z = vehicle.forkZ(.rack_low),
-        },
-        .destination = .{
-            .x = 500,
-            .y = 600,
-            .width = 100,
-            .height = 100,
-        },
-        .cargo = cargo.standard_cargo,
-    },
-    .{
-        .pallet_spawn = .{
-            .position = .{ .x = 600, .y = 650 },
-        },
-        .destination = .{
-            .x = 880,
-            .y = 100,
-            .width = 120,
-            .height = 120,
-        },
-        .cargo = cargo.long_cargo,
-    },
+    // .{
+    //     .pallet_spawn = .{
+    //         .position = .{ .x = 1010, .y = 430 },
+    //         .support_z = vehicle.forkZ(.rack_low),
+    //     },
+    //     .destination = .{
+    //         .x = 500,
+    //         .y = 600,
+    //         .width = 100,
+    //         .height = 100,
+    //     },
+    //     .cargo = cargo.standard_cargo,
+    // },
+    // .{
+    //     .pallet_spawn = .{
+    //         .position = .{ .x = 600, .y = 650 },
+    //     },
+    //     .destination = .{
+    //         .x = 880,
+    //         .y = 100,
+    //         .width = 120,
+    //         .height = 120,
+    //     },
+    //     .cargo = cargo.long_cargo,
+    // },
 };
 
 const orientation_pages = [_][]const u8{
@@ -123,11 +128,25 @@ const orientation_pages = [_][]const u8{
     "Complete each delivery job to finish your shift.",
 };
 
+const promotion_pages = [_][]const u8{
+    "Training complete.",
+    "You are now Forklift Certified.",
+};
+
+const briefings = [_]campaign.BossMessage{ .{
+    .trigger = .shift_start,
+    .pages = &orientation_pages,
+}, .{
+    .trigger = .{ .before_job = 1 },
+    .pages = &heavy_cargo_pages,
+} };
+
 pub const shift = campaign.ShiftDefinition{
     .id = .training_orientation,
+    .stage_id = .training_facility,
     .title = "Training Orientation",
     .jobs = &jobs_data,
-    .opening_briefing = .{ .pages = &orientation_pages },
+    .briefings = &briefings,
     .scoring = .{
         .completion_points = 1_000,
         .target_time_seconds = 180,
@@ -142,6 +161,7 @@ pub const stage = campaign.StageDefinition{
     .id = .training_facility,
     .title = "Training Facility",
     .shifts = &shifts,
+    .promotion_pages = &promotion_pages,
 };
 
 pub const decorative_pallets = [_]cargo.Pallet{};

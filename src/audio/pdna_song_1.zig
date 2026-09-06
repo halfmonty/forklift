@@ -115,10 +115,7 @@ pub const song1 = pdna.SongPreset{
                 },
             },
             .notes = &song1_bass_notes,
-            .pitch_automation = &[_]pdna.PitchPoint{
-                .{ .step = 3, .semitones = 0.0, .interpolate = false },
-                .{ .step = 5, .semitones = 7.0, .interpolate = true },
-            },
+            .pitch_automation = &.{},
         },
         .{
             .volume = 1.0,

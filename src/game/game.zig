@@ -12,6 +12,8 @@ const stages = @import("../content/stages.zig");
 const campaign = @import("campaign.zig");
 const scoring = @import("scoring.zig");
 const input = @import("input.zig");
+const progress = @import("progress.zig");
+const progress_store = @import("progress_store.zig");
 
 const render_cull_margin: f32 = 50;
 const impact_rearm_distance: f32 = 12;
@@ -20,6 +22,16 @@ const pickup_tuning = cargo.PickupTuning{
     .max_angle_error_rad = 0.4,
     .tine_lateral_tolerance = 3,
     .minimum_insertion = 18,
+};
+
+const TitleSelection = enum {
+    continue_game,
+    new_game,
+};
+
+const BriefingContinuation = union(enum) {
+    shift_start,
+    before_job: usize,
 };
 
 fn palletForJob(job: jobs.JobDefinition) cargo.Pallet {
@@ -34,6 +46,35 @@ fn palletForJob(job: jobs.JobDefinition) cargo.Pallet {
 
 fn activeShift(game: *const Game) *const campaign.ShiftDefinition {
     return &stages.active_campaign.stages[game.stage_index].shifts[game.shift_index];
+}
+
+fn shiftStartBriefing(
+    shift: *const campaign.ShiftDefinition,
+) ?[]const []const u8 {
+    for (shift.briefings) |briefing| {
+        switch (briefing.trigger) {
+            .shift_start => return briefing.pages,
+            .before_job => {},
+        }
+    }
+    return null;
+}
+
+fn beforeJobBriefing(
+    shift: *const campaign.ShiftDefinition,
+    job_index: usize,
+) ?[]const []const u8 {
+    for (shift.briefings) |briefing| {
+        switch (briefing.trigger) {
+            .shift_start => {},
+            .before_job => |briefing_job_index| {
+                if (briefing_job_index == job_index) {
+                    return briefing.pages;
+                }
+            },
+        }
+    }
+    return null;
 }
 
 fn activeStageId(game: *const Game) campaign.StageId {
@@ -62,16 +103,28 @@ pub const Game = struct {
     stage_index: usize = 0,
     shift_index: usize = 0,
     briefing_page_index: usize = 0,
+    progress_state: progress.Progress = progress.Progress.initial(),
+    has_saved_progress: bool = false,
+    title_selection: TitleSelection = .new_game,
+    briefing_continuation: BriefingContinuation = .shift_start,
 
     pub fn init(
         playdate: *pdapi.PlaydateAPI,
         game_audio: audio.Audio,
         font: *pdapi.LCDFont,
     ) Game {
+        const loaded = progress_store.load(
+            playdate,
+            stages.active_campaign,
+        );
+
         return .{
             .playdate = playdate,
             .audio = game_audio,
             .font = font,
+            .progress_state = loaded.progress,
+            .has_saved_progress = loaded.exists,
+            .title_selection = if (loaded.exists) .continue_game else .new_game,
         };
     }
 
@@ -115,6 +168,16 @@ pub const Game = struct {
             .shift_results => {
                 updateShiftResults(game, frame_input.pushed);
                 drawShiftResults(game);
+                return 1;
+            },
+            .promotion => {
+                updatePromotion(game, frame_input.pushed);
+                drawPromotion(game);
+                return 1;
+            },
+            .campaign_complete => {
+                updateCampaignComplete(game, frame_input.pushed);
+                drawCampaignComplete(game);
                 return 1;
             },
         }
@@ -207,9 +270,12 @@ pub const Game = struct {
             game.job_state = jobs.update(game.job_state, game.pallet, shift.jobs[game.job_index].destination);
             if (game.job_state == .delivered) {
                 if (game.job_index + 1 < shift.jobs.len) {
-                    game.job_index += 1;
-                    game.pallet = palletForJob(shift.jobs[game.job_index]);
-                    game.job_state = .waiting_for_pickup;
+                    const next_job_index = game.job_index + 1;
+                    if (beforeJobBriefing(shift, next_job_index) != null) {
+                        beginBriefing(game, .{ .before_job = next_job_index });
+                    } else {
+                        startJob(game, next_job_index);
+                    }
                 } else {
                     game.shift_result = scoring.calculate(
                         shift.scoring,
@@ -237,20 +303,123 @@ fn beginShift(game: *Game) void {
     resetCurrentJob(game);
 }
 
-fn updateTitle(game: *Game, pushed: pdapi.PDButtons) void {
-    if (pushed & pdapi.BUTTON_A == 0) return;
-    beginShift(game);
+fn beginBriefing(
+    game: *Game,
+    continuation: BriefingContinuation,
+) void {
+    game.briefing_continuation = continuation;
     game.briefing_page_index = 0;
     game.flow_state = .briefing;
 }
 
-fn updateBriefing(game: *Game, pushed: pdapi.PDButtons) void {
-    if (pushed & pdapi.BUTTON_A == 0) return;
-    const pages = activeShift(game).opening_briefing.pages;
-    if (game.briefing_page_index + 1 < pages.len) {
-        game.briefing_page_index += 1;
+fn activeBriefingPages(game: *const Game) []const []const u8 {
+    const shift = activeShift(game);
+
+    return switch (game.briefing_continuation) {
+        .shift_start => shiftStartBriefing(shift) orelse unreachable,
+        .before_job => |job_index| beforeJobBriefing(
+            shift,
+            job_index,
+        ) orelse unreachable,
+    };
+}
+
+fn startJob(game: *Game, job_index: usize) void {
+    const shift = activeShift(game);
+    game.job_index = job_index;
+    game.pallet = palletForJob(shift.jobs[job_index]);
+    game.job_state = .waiting_for_pickup;
+}
+
+fn enterShift(
+    game: *Game,
+    stage_index: usize,
+    shift_index: usize,
+) void {
+    game.stage_index = stage_index;
+    game.shift_index = shift_index;
+    beginShift(game);
+
+    if (shiftStartBriefing(activeShift(game)) != null) {
+        beginBriefing(game, .shift_start);
     } else {
         game.flow_state = .playing_shift;
+    }
+}
+
+fn saveNextUnfinishedShift(
+    game: *Game,
+    stage_index: usize,
+    shift_index: usize,
+) void {
+    const stage = stages.active_campaign.stages[stage_index];
+    const shift = stage.shifts[shift_index];
+    std.debug.assert(shift.stage_id == stage.id);
+
+    game.progress_state = .{
+        .next_unfinished_stage_id = stage.id,
+        .next_unfinished_shift_id = shift.id,
+        .campaign_complete = false,
+    };
+    game.has_saved_progress = progress_store.save(game.playdate, game.progress_state);
+}
+
+fn saveCampaignComplete(game: *Game) void {
+    game.progress_state.campaign_complete = true;
+    game.has_saved_progress = progress_store.save(game.playdate, game.progress_state);
+}
+
+fn updateTitle(game: *Game, pushed: pdapi.PDButtons) void {
+    if (game.has_saved_progress and
+        pushed & (pdapi.BUTTON_UP | pdapi.BUTTON_DOWN) != 0)
+    {
+        game.title_selection = switch (game.title_selection) {
+            .continue_game => .new_game,
+            .new_game => .continue_game,
+        };
+    }
+
+    if (pushed & pdapi.BUTTON_A == 0) return;
+
+    if (game.title_selection == .new_game) {
+        if (game.has_saved_progress and !progress_store.clear(game.playdate)) return;
+        game.progress_state = progress.Progress.initial();
+        game.has_saved_progress = false;
+        enterShift(game, 0, 0);
+        return;
+    }
+
+    if (game.progress_state.campaign_complete) {
+        game.briefing_page_index = 0;
+        game.flow_state = .campaign_complete;
+        return;
+    }
+
+    const location = progress.locationFor(
+        stages.active_campaign,
+        game.progress_state,
+    ) orelse {
+        game.progress_state = progress.Progress.initial();
+        enterShift(game, 0, 0);
+        return;
+    };
+
+    enterShift(game, location.stage_index, location.shift_index);
+}
+
+fn updateBriefing(game: *Game, pushed: pdapi.PDButtons) void {
+    if (pushed & pdapi.BUTTON_A == 0) return;
+    const pages = activeBriefingPages(game);
+    if (game.briefing_page_index + 1 < pages.len) {
+        game.briefing_page_index += 1;
+        return;
+    }
+    switch (game.briefing_continuation) {
+        .shift_start => game.flow_state = .playing_shift,
+        .before_job => |job_index| {
+            startJob(game, job_index);
+            game.flow_state = .playing_shift;
+        },
     }
 }
 
@@ -264,7 +433,53 @@ fn resetCurrentJob(game: *Game) void {
 }
 
 fn updateShiftResults(game: *Game, pushed: pdapi.PDButtons) void {
-    if (pushed & pdapi.BUTTON_A != 0) game.flow_state = .title;
+    if (pushed & pdapi.BUTTON_A == 0) return;
+
+    switch (campaign.routeAfterCompletedShift(
+        stages.active_campaign,
+        game.stage_index,
+        game.shift_index,
+    )) {
+        .next_shift => |next| {
+            saveNextUnfinishedShift(game, next.stage_index, next.shift_index);
+            enterShift(game, next.stage_index, next.shift_index);
+        },
+        .promotion => {
+            game.briefing_page_index = 0;
+            game.flow_state = .promotion;
+        },
+        .campaign_complete => {
+            saveCampaignComplete(game);
+            game.briefing_page_index = 0;
+            game.flow_state = .campaign_complete;
+        },
+    }
+}
+
+fn updatePromotion(game: *Game, pushed: pdapi.PDButtons) void {
+    if (pushed & pdapi.BUTTON_A == 0) return;
+
+    const pages = stages.active_campaign.stages[game.stage_index].promotion_pages;
+    if (game.briefing_page_index + 1 < pages.len) {
+        game.briefing_page_index += 1;
+        return;
+    }
+
+    const next_stage_index = game.stage_index + 1;
+    saveNextUnfinishedShift(game, next_stage_index, 0);
+    enterShift(game, next_stage_index, 0);
+}
+
+fn updateCampaignComplete(game: *Game, pushed: pdapi.PDButtons) void {
+    if (pushed & pdapi.BUTTON_A == 0) return;
+
+    const pages = stages.active_campaign.campaign_complete_pages;
+    if (game.briefing_page_index + 1 < pages.len) {
+        game.briefing_page_index += 1;
+        return;
+    }
+
+    game.flow_state = .title;
 }
 
 fn drawShiftResults(game: *Game) void {
@@ -290,16 +505,57 @@ fn drawTitle(game: *Game) void {
     const playdate = game.playdate;
     playdate.graphics.clear(@intCast(@intFromEnum(pdapi.LCDSolidColor.ColorWhite)));
     const title = "FORKLIFT CERTIFIED";
-    const prompt = "A: Continue Main Game";
     _ = playdate.graphics.drawText(title.ptr, title.len, .UTF8Encoding, 72, 88);
-    _ = playdate.graphics.drawText(prompt.ptr, prompt.len, .UTF8Encoding, 88, 136);
+    if (!game.has_saved_progress) {
+        const prompt = "A: New Game";
+        _ = playdate.graphics.drawText(prompt.ptr, prompt.len, .UTF8Encoding, 136, 136);
+        return;
+    }
+
+    const options = std.fmt.bufPrint(&game.debug_buffer, "{s} Continue\n{s} New Game\n\nUp/Down: Select\nA: Confirm", .{
+        if (game.title_selection == .continue_game) ">" else " ",
+        if (game.title_selection == .new_game) ">" else " ",
+    }) catch unreachable;
+    _ = playdate.graphics.drawText(options.ptr, options.len, .UTF8Encoding, 120, 128);
 }
 
 fn drawBriefing(game: *Game) void {
     const playdate = game.playdate;
-    const pages = activeShift(game).opening_briefing.pages;
+    const pages = activeBriefingPages(game);
     const page = pages[game.briefing_page_index];
     const prompt = if (game.briefing_page_index + 1 < pages.len) "A: Next" else "A: Start Shift";
+    playdate.graphics.clear(@intCast(@intFromEnum(pdapi.LCDSolidColor.ColorWhite)));
+    playdate.graphics.drawRect(8, 48, 384, 144, @intCast(@intFromEnum(pdapi.LCDSolidColor.ColorBlack)));
+    const boss = "BOSS";
+    _ = playdate.graphics.drawText(boss.ptr, boss.len, .UTF8Encoding, 24, 64);
+    _ = playdate.graphics.drawText(page.ptr, page.len, .UTF8Encoding, 24, 96);
+    _ = playdate.graphics.drawText(prompt.ptr, prompt.len, .UTF8Encoding, 24, 168);
+}
+
+fn drawPromotion(game: *Game) void {
+    const playdate = game.playdate;
+    const pages = stages.active_campaign.stages[game.stage_index].promotion_pages;
+    const page = pages[game.briefing_page_index];
+    const prompt = if (game.briefing_page_index + 1 < pages.len)
+        "A: Next"
+    else
+        "A: Continue";
+    playdate.graphics.clear(@intCast(@intFromEnum(pdapi.LCDSolidColor.ColorWhite)));
+    playdate.graphics.drawRect(8, 48, 384, 144, @intCast(@intFromEnum(pdapi.LCDSolidColor.ColorBlack)));
+    const boss = "BOSS";
+    _ = playdate.graphics.drawText(boss.ptr, boss.len, .UTF8Encoding, 24, 64);
+    _ = playdate.graphics.drawText(page.ptr, page.len, .UTF8Encoding, 24, 96);
+    _ = playdate.graphics.drawText(prompt.ptr, prompt.len, .UTF8Encoding, 24, 168);
+}
+
+fn drawCampaignComplete(game: *Game) void {
+    const playdate = game.playdate;
+    const pages = stages.active_campaign.campaign_complete_pages;
+    const page = pages[game.briefing_page_index];
+    const prompt = if (game.briefing_page_index + 1 < pages.len)
+        "A: Next"
+    else
+        "A: Return to Title";
     playdate.graphics.clear(@intCast(@intFromEnum(pdapi.LCDSolidColor.ColorWhite)));
     playdate.graphics.drawRect(8, 48, 384, 144, @intCast(@intFromEnum(pdapi.LCDSolidColor.ColorBlack)));
     const boss = "BOSS";

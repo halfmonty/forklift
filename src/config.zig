@@ -7,3 +7,6 @@ pub const max_reverse_speed: f32 = 70.0;
 pub const screen_width: f32 = 400.0;
 pub const screen_height: f32 = 240.0;
 pub const carried_acceleration_multiplier: f32 = 0.7;
+
+// Development-only selection. Production stages belong in production_stages.
+pub const use_stress_stage = false;

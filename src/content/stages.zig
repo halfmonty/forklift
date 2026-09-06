@@ -1,20 +1,28 @@
 const static_level = @import("static_level.zig");
 const training_facility = @import("training_facility.zig");
+const first_warehouse = @import("first_warehouse.zig");
 const stress_test = @import("stress_test.zig");
 const campaign = @import("../game/campaign.zig");
 const cargo = @import("../sim/cargo.zig");
 const math2 = @import("../sim/math2.zig");
 const vehicle = @import("../sim/vehicle.zig");
 const render = @import("../render/renderer.zig");
+const config = @import("../config.zig");
 
-// Development-only selection. Production stages belong in production_stages.
-pub const use_stress_stage = false;
-
-const production_stages = [_]campaign.StageDefinition{training_facility.stage};
+const production_stages = [_]campaign.StageDefinition{
+    training_facility.stage,
+    first_warehouse.stage,
+};
 const stress_stages = [_]campaign.StageDefinition{stress_test.stage};
 
+const campaign_complete_pages = [_][]const u8{
+    "All shifts complete.",
+    "Excellent work, operator.",
+};
+
 pub const active_campaign = campaign.CampaignDefinition{
-    .stages = if (use_stress_stage) &stress_stages else &production_stages,
+    .stages = if (config.use_stress_stage) &stress_stages else &production_stages,
+    .campaign_complete_pages = &campaign_complete_pages,
 };
 
 pub const initial_stage_id = active_campaign.stages[0].id;
@@ -24,6 +32,7 @@ pub fn forkliftSpawn(stage_id: campaign.StageId) math2.Vec2 {
     return switch (stage_id) {
         .training_facility => training_facility.forklift_spawn,
         .stress_test => stress_test.forklift_spawn,
+        .first_warehouse => first_warehouse.forklift_spawn,
     };
 }
 
@@ -31,6 +40,7 @@ pub fn worldSize(stage_id: campaign.StageId) math2.Vec2 {
     return switch (stage_id) {
         .training_facility => training_facility.world_size,
         .stress_test => stress_test.world_size,
+        .first_warehouse => first_warehouse.world_size,
     };
 }
 
@@ -42,6 +52,7 @@ pub fn collides(
     return switch (stage_id) {
         .training_facility => training_facility.warehouse.collides(forklift, carried),
         .stress_test => stress_test.warehouse.collides(forklift, carried),
+        .first_warehouse => first_warehouse.warehouse.collides(forklift, carried),
     };
 }
 
@@ -54,6 +65,7 @@ pub fn drawWarehouse(
     switch (stage_id) {
         .training_facility => training_facility.warehouse.draw(renderer, phase, actor_depth),
         .stress_test => stress_test.warehouse.draw(renderer, phase, actor_depth),
+        .first_warehouse => first_warehouse.warehouse.draw(renderer, phase, actor_depth),
     }
 }
 
@@ -67,6 +79,10 @@ pub fn drawDecorativePallets(
             renderer.pallet(pallet);
         },
         .stress_test => for (stress_test.decorative_pallets) |pallet| {
+            renderer.palletShadow(pallet);
+            renderer.pallet(pallet);
+        },
+        .first_warehouse => for (first_warehouse.decorative_pallets) |pallet| {
             renderer.palletShadow(pallet);
             renderer.pallet(pallet);
         },
@@ -86,5 +102,6 @@ pub fn rackLowDropSupport(
             stress_test.rack_low_support_z
         else
             null,
+        .first_warehouse => null,
     };
 }

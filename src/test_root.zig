@@ -7,4 +7,5 @@ test {
     _ = @import("render/camera.zig");
     _ = @import("content/static_level.zig");
     _ = @import("game/scoring.zig");
+    _ = @import("game/progress.zig");
 }
