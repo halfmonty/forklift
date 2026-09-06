@@ -1,6 +1,7 @@
 const std = @import("std");
 const math2 = @import("math2.zig");
 const config = @import("../config.zig");
+const collision = @import("collision.zig");
 
 pub const body_front_extent: f32 = 20;
 pub const body_rear_extent: f32 = 14;
@@ -132,6 +133,25 @@ pub fn forkGeometry(forklift: Forklift) ForkGeometry {
         .right_base = right_base,
         .right_tip = math2.add(right_base, fork_length),
     };
+}
+
+pub fn forksOverlapRect(
+    forklift: Forklift,
+    rect: collision.Rect,
+) bool {
+    const forks = forkGeometry(forklift);
+    const center = math2.Vec2{
+        .x = (forks.left_base.x + forks.right_tip.x) * 0.5,
+        .y = (forks.left_base.y + forks.right_tip.y) * 0.5,
+    };
+
+    return collision.obbOverlapsRect(
+        center,
+        11,
+        7,
+        forklift.heading_rad,
+        rect,
+    );
 }
 
 pub fn curvature(steer_angle_rad: f32) f32 {

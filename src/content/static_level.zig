@@ -72,10 +72,20 @@ pub const StackedRack = struct {
         actor_depth: f32,
     ) void {
         _ = actor_depth;
-        if (phase != .before_actors) return;
+        _ = self;
+        _ = renderer;
+        _ = phase;
+    }
 
-        renderer.shelf(self.zone, self.low_support_z);
-        renderer.shelf(self.zone, self.high_support_z);
+    pub fn drawOccluder(
+        self: StackedRack,
+        renderer: *render.Renderer,
+        component_depth: f32,
+        component_z: f32,
+        draw_before_component: bool,
+    ) void {
+        renderer.shelfOccluder(self.zone, self.low_support_z, component_depth, component_z, draw_before_component);
+        renderer.shelfOccluder(self.zone, self.high_support_z, component_depth, component_z, draw_before_component);
     }
 };
 
@@ -99,12 +109,21 @@ pub const StorageRack = struct {
         actor_depth: f32,
     ) void {
         _ = actor_depth;
-        if (phase != .before_actors) return;
+        _ = self;
+        _ = renderer;
+        _ = phase;
+    }
 
-        renderer.shelf(self.bounds, vehicle.forkZ(.rack_low));
-
+    pub fn drawOccluder(
+        self: StorageRack,
+        renderer: *render.Renderer,
+        component_depth: f32,
+        component_z: f32,
+        draw_before_component: bool,
+    ) void {
+        renderer.shelfOccluder(self.bounds, vehicle.forkZ(.rack_low), component_depth, component_z, draw_before_component);
         if (self.level == .high) {
-            renderer.shelf(self.bounds, vehicle.forkZ(.rack_high));
+            renderer.shelfOccluder(self.bounds, vehicle.forkZ(.rack_high), component_depth, component_z, draw_before_component);
         }
     }
 
@@ -123,6 +142,92 @@ pub const StorageRack = struct {
                 null,
             else => null,
         };
+    }
+
+    pub fn blocksCarriedCargo(_: StorageRack) bool {
+        return false;
+    }
+
+    pub fn blocksForkLowering(
+        self: StorageRack,
+        forklift: vehicle.Forklift,
+        carried: ?cargo.Pallet,
+        from_height: vehicle.ForkHeight,
+        to_height: vehicle.ForkHeight,
+    ) bool {
+        const crosses_low_shelf = crossesShelf(
+            from_height,
+            to_height,
+            .rack_low,
+        );
+        const crosses_high_shelf = self.level == .high and
+            crossesShelf(from_height, to_height, .rack_high);
+
+        if (!crosses_low_shelf and !crosses_high_shelf) return false;
+
+        if (vehicle.forksOverlapRect(forklift, self.bounds)) return true;
+
+        if (carried) |pallet| {
+            return collision.obbOverlapsRect(
+                pallet.position,
+                pallet.footprint.half_length,
+                pallet.footprint.half_width,
+                pallet.heading_rad,
+                self.bounds,
+            );
+        }
+
+        return false;
+    }
+
+    pub fn blocksForkRaising(
+        self: StorageRack,
+        forklift: vehicle.Forklift,
+        carried: ?cargo.Pallet,
+        from_height: vehicle.ForkHeight,
+        to_height: vehicle.ForkHeight,
+    ) bool {
+        const crosses_low_shelf = crossesShelfUp(
+            from_height,
+            to_height,
+            .rack_low,
+        );
+        const crosses_high_shelf = self.level == .high and
+            crossesShelfUp(from_height, to_height, .rack_high);
+
+        if (!crosses_low_shelf and !crosses_high_shelf) return false;
+
+        if (vehicle.forksOverlapRect(forklift, self.bounds)) return true;
+
+        if (carried) |pallet| {
+            return collision.obbOverlapsRect(
+                pallet.position,
+                pallet.footprint.half_length,
+                pallet.footprint.half_width,
+                pallet.heading_rad,
+                self.bounds,
+            );
+        }
+
+        return false;
+    }
+
+    fn crossesShelf(
+        from_height: vehicle.ForkHeight,
+        to_height: vehicle.ForkHeight,
+        shelf_height: vehicle.ForkHeight,
+    ) bool {
+        return vehicle.forkZ(from_height) >= vehicle.forkZ(shelf_height) and
+            vehicle.forkZ(to_height) < vehicle.forkZ(shelf_height);
+    }
+
+    fn crossesShelfUp(
+        from_height: vehicle.ForkHeight,
+        to_height: vehicle.ForkHeight,
+        shelf_height: vehicle.ForkHeight,
+    ) bool {
+        return vehicle.forkZ(from_height) < vehicle.forkZ(shelf_height) and
+            vehicle.forkZ(to_height) >= vehicle.forkZ(shelf_height);
     }
 };
 
@@ -171,9 +276,19 @@ pub const Shelf = struct {
         actor_depth: f32,
     ) void {
         _ = actor_depth;
-        if (phase == .before_actors) {
-            renderer.shelf(self.zone, self.support_z);
-        }
+        _ = self;
+        _ = renderer;
+        _ = phase;
+    }
+
+    pub fn drawOccluder(
+        self: Shelf,
+        renderer: *render.Renderer,
+        component_depth: f32,
+        component_z: f32,
+        draw_before_component: bool,
+    ) void {
+        renderer.shelfOccluder(self.zone, self.support_z, component_depth, component_z, draw_before_component);
     }
 };
 
@@ -234,15 +349,65 @@ pub fn StaticLevel(comptime objects: anytype) type {
                         rect,
                     )) return true;
 
-                    if (carried) |pallet| {
-                        if (collision.obbOverlapsRect(
-                            pallet.position,
-                            pallet.footprint.half_length,
-                            pallet.footprint.half_width,
-                            pallet.heading_rad,
-                            rect,
-                        )) return true;
+                    const blocks_carried_cargo = if (@hasDecl(
+                        @TypeOf(object),
+                        "blocksCarriedCargo",
+                    ))
+                        object.blocksCarriedCargo()
+                    else
+                        true;
+
+                    if (blocks_carried_cargo) {
+                        if (carried) |pallet| {
+                            if (collision.obbOverlapsRect(
+                                pallet.position,
+                                pallet.footprint.half_length,
+                                pallet.footprint.half_width,
+                                pallet.heading_rad,
+                                rect,
+                            )) return true;
+                        }
                     }
+                }
+            }
+            return false;
+        }
+
+        pub fn blocksForkLowering(
+            _: @This(),
+            forklift: vehicle.Forklift,
+            carried: ?cargo.Pallet,
+            from_height: vehicle.ForkHeight,
+            to_height: vehicle.ForkHeight,
+        ) bool {
+            inline for (objects) |object| {
+                if (@hasDecl(@TypeOf(object), "blocksForkLowering")) {
+                    if (object.blocksForkLowering(
+                        forklift,
+                        carried,
+                        from_height,
+                        to_height,
+                    )) return true;
+                }
+            }
+            return false;
+        }
+
+        pub fn blocksForkRaising(
+            _: @This(),
+            forklift: vehicle.Forklift,
+            carried: ?cargo.Pallet,
+            from_height: vehicle.ForkHeight,
+            to_height: vehicle.ForkHeight,
+        ) bool {
+            inline for (objects) |object| {
+                if (@hasDecl(@TypeOf(object), "blocksForkRaising")) {
+                    if (object.blocksForkRaising(
+                        forklift,
+                        carried,
+                        from_height,
+                        to_height,
+                    )) return true;
                 }
             }
             return false;
@@ -256,6 +421,25 @@ pub fn StaticLevel(comptime objects: anytype) type {
         ) void {
             inline for (objects) |object| {
                 object.draw(renderer, phase, actor_depth);
+            }
+        }
+
+        pub fn drawShelfOccluders(
+            _: @This(),
+            renderer: *render.Renderer,
+            component_depth: f32,
+            component_z: f32,
+            draw_before_component: bool,
+        ) void {
+            inline for (objects) |object| {
+                if (@hasDecl(@TypeOf(object), "drawOccluder")) {
+                    object.drawOccluder(
+                        renderer,
+                        component_depth,
+                        component_z,
+                        draw_before_component,
+                    );
+                }
             }
         }
     };

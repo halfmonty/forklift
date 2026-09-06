@@ -68,6 +68,76 @@ pub fn collides(
     };
 }
 
+pub fn blocksForkLowering(
+    stage_id: campaign.StageId,
+    forklift: vehicle.Forklift,
+    carried: ?cargo.Pallet,
+    from_height: vehicle.ForkHeight,
+    to_height: vehicle.ForkHeight,
+) bool {
+    return switch (stage_id) {
+        .training_facility => training_facility.warehouse.blocksForkLowering(
+            forklift,
+            carried,
+            from_height,
+            to_height,
+        ),
+        .stress_test => stress_test.warehouse.blocksForkLowering(
+            forklift,
+            carried,
+            from_height,
+            to_height,
+        ),
+        .first_warehouse => first_warehouse.warehouse.blocksForkLowering(
+            forklift,
+            carried,
+            from_height,
+            to_height,
+        ),
+        .feature_test => feature_test.warehouse.blocksForkLowering(
+            forklift,
+            carried,
+            from_height,
+            to_height,
+        ),
+    };
+}
+
+pub fn blocksForkRaising(
+    stage_id: campaign.StageId,
+    forklift: vehicle.Forklift,
+    carried: ?cargo.Pallet,
+    from_height: vehicle.ForkHeight,
+    to_height: vehicle.ForkHeight,
+) bool {
+    return switch (stage_id) {
+        .training_facility => training_facility.warehouse.blocksForkRaising(
+            forklift,
+            carried,
+            from_height,
+            to_height,
+        ),
+        .stress_test => stress_test.warehouse.blocksForkRaising(
+            forklift,
+            carried,
+            from_height,
+            to_height,
+        ),
+        .first_warehouse => first_warehouse.warehouse.blocksForkRaising(
+            forklift,
+            carried,
+            from_height,
+            to_height,
+        ),
+        .feature_test => feature_test.warehouse.blocksForkRaising(
+            forklift,
+            carried,
+            from_height,
+            to_height,
+        ),
+    };
+}
+
 pub fn drawWarehouse(
     stage_id: campaign.StageId,
     renderer: *render.Renderer,
@@ -79,6 +149,41 @@ pub fn drawWarehouse(
         .stress_test => stress_test.warehouse.draw(renderer, phase, actor_depth),
         .first_warehouse => first_warehouse.warehouse.draw(renderer, phase, actor_depth),
         .feature_test => feature_test.warehouse.draw(renderer, phase, actor_depth),
+    }
+}
+
+pub fn drawShelfOccluders(
+    stage_id: campaign.StageId,
+    renderer: *render.Renderer,
+    component_depth: f32,
+    component_z: f32,
+    draw_before_component: bool,
+) void {
+    switch (stage_id) {
+        .training_facility => training_facility.warehouse.drawShelfOccluders(
+            renderer,
+            component_depth,
+            component_z,
+            draw_before_component,
+        ),
+        .stress_test => stress_test.warehouse.drawShelfOccluders(
+            renderer,
+            component_depth,
+            component_z,
+            draw_before_component,
+        ),
+        .first_warehouse => first_warehouse.warehouse.drawShelfOccluders(
+            renderer,
+            component_depth,
+            component_z,
+            draw_before_component,
+        ),
+        .feature_test => feature_test.warehouse.drawShelfOccluders(
+            renderer,
+            component_depth,
+            component_z,
+            draw_before_component,
+        ),
     }
 }
 

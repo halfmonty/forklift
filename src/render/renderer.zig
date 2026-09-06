@@ -156,6 +156,37 @@ pub const Renderer = struct {
         drawShelf(self.playdate, zone, support_z, self.camera_state, black);
     }
 
+    pub fn shelfOccluder(
+        self: *Renderer,
+        zone: collision.Rect,
+        support_z: f32,
+        component_depth: f32,
+        component_z: f32,
+        draw_before_component: bool,
+    ) void {
+        if (component_z >= support_z) return;
+        if (!self.acceptsRect(zone)) return;
+
+        const shelf_depth = self.rectFrontDepth(zone);
+        const draw_before = component_depth >= shelf_depth;
+        if (draw_before != draw_before_component) return;
+
+        drawShelf(self.playdate, zone, support_z, self.camera_state, black);
+    }
+
+    pub fn rectFrontDepth(self: Renderer, rect: collision.Rect) f32 {
+        return @max(
+            @max(
+                camera.depth(.{ .x = rect.x, .y = rect.y }, self.camera_state),
+                camera.depth(.{ .x = rect.x + rect.width, .y = rect.y }, self.camera_state),
+            ),
+            @max(
+                camera.depth(.{ .x = rect.x + rect.width, .y = rect.y + rect.height }, self.camera_state),
+                camera.depth(.{ .x = rect.x, .y = rect.y + rect.height }, self.camera_state),
+            ),
+        );
+    }
+
     pub fn palletShadow(self: *Renderer, pallet_data: cargo.Pallet) void {
         if (!self.acceptsPallet(pallet_data)) return;
         drawPalletShadow(self.playdate, pallet_data, self.camera_state, black);
@@ -166,20 +197,59 @@ pub const Renderer = struct {
         drawPallet(self.playdate, pallet_data, self.camera_state, black);
     }
 
-    pub fn forklift(self: *Renderer, forklift_data: vehicle.Forklift) void {
+    pub fn forkliftBase(self: *Renderer, forklift_data: vehicle.Forklift) void {
         self.stats.submitted += 1;
-        drawForklift(self.playdate, forklift_data, self.camera_state);
+        drawForkliftBase(self.playdate, forklift_data, self.camera_state);
+    }
+
+    pub fn forkliftCanopy(self: *Renderer, forklift_data: vehicle.Forklift) void {
+        self.stats.submitted += 1;
+        drawForkliftCanopy(self.playdate, forklift_data, self.camera_state);
+    }
+
+    pub fn forkliftMast(self: *Renderer, forklift_data: vehicle.Forklift) void {
+        self.stats.submitted += 1;
+        drawForkliftMast(self.playdate, forklift_data, self.camera_state);
+    }
+
+    pub fn forkliftForks(self: *Renderer, forklift_data: vehicle.Forklift) void {
+        self.stats.submitted += 1;
+        drawForkliftForks(self.playdate, forklift_data, self.camera_state);
     }
 };
 
-pub fn drawForklift(
+pub fn canopyBehindForks(
+    forklift: vehicle.Forklift,
+    camera_state: camera.Camera,
+) bool {
+    const forward = math2.forwardVector(forklift.heading_rad);
+    const right = math2.Vec2{
+        .x = @cos(forklift.heading_rad),
+        .y = @sin(forklift.heading_rad),
+    };
+    const canopy_center = offsetPoint(
+        vehicle.bodyCenter(forklift),
+        forward,
+        right,
+        -4,
+        0,
+    );
+    const forks = vehicle.forkGeometry(forklift);
+    const fork_center = math2.Vec2{
+        .x = (forks.left_base.x + forks.right_tip.x) * 0.5,
+        .y = (forks.left_base.y + forks.right_tip.y) * 0.5,
+    };
+    return camera.depth(canopy_center, camera_state) <
+        camera.depth(fork_center, camera_state);
+}
+
+pub fn drawForkliftBase(
     playdate: *pdapi.PlaydateAPI,
     forklift: vehicle.Forklift,
     camera_state: camera.Camera,
 ) void {
     const white: pdapi.LCDColor =
         @intCast(@intFromEnum(pdapi.LCDSolidColor.ColorWhite));
-    const fork_z = vehicle.forkZ(forklift.fork_height);
     const forward =
         math2.forwardVector(forklift.heading_rad);
     const right = math2.Vec2{
@@ -219,69 +289,6 @@ pub fn drawForklift(
     );
     drawQuad(playdate, deck, white, black);
 
-    const forks = vehicle.forkGeometry(forklift);
-    const left_base = projection.project(
-        forks.left_base,
-        fork_z,
-        camera_state,
-        projection.default_tuning,
-    );
-    const left_tip = projection.project(
-        forks.left_tip,
-        fork_z,
-        camera_state,
-        projection.default_tuning,
-    );
-    const right_base = projection.project(
-        forks.right_base,
-        fork_z,
-        camera_state,
-        projection.default_tuning,
-    );
-    const right_tip = projection.project(
-        forks.right_tip,
-        fork_z,
-        camera_state,
-        projection.default_tuning,
-    );
-
-    line(playdate, left_base, left_tip, 3, black);
-    line(playdate, right_base, right_tip, 3, black);
-
-    const mast_top_z: f32 = 68;
-
-    const left_mast_base = projection.project(
-        forks.left_base,
-        0,
-        camera_state,
-        projection.default_tuning,
-    );
-    const right_mast_base = projection.project(
-        forks.right_base,
-        0,
-        camera_state,
-        projection.default_tuning,
-    );
-    const left_mast_top = projection.project(
-        forks.left_base,
-        mast_top_z,
-        camera_state,
-        projection.default_tuning,
-    );
-    const right_mast_top = projection.project(
-        forks.right_base,
-        mast_top_z,
-        camera_state,
-        projection.default_tuning,
-    );
-
-    line(playdate, left_mast_base, left_mast_top, 2, black);
-    line(playdate, right_mast_base, right_mast_top, 2, black);
-    line(playdate, left_mast_top, right_mast_top, 2, black);
-
-    // Moving carriage.
-    line(playdate, left_base, right_base, 3, black);
-
     const rear_axle = forklift.position;
     const wheel_direction = vehicle.rearWheelDirection(
         forklift.heading_rad,
@@ -304,7 +311,38 @@ pub fn drawForklift(
         5,
         black,
     );
+}
 
+pub fn drawForkliftMast(
+    playdate: *pdapi.PlaydateAPI,
+    forklift: vehicle.Forklift,
+    camera_state: camera.Camera,
+) void {
+    const forks = vehicle.forkGeometry(forklift);
+    const mast_top_z: f32 = 68;
+    const left_mast_base = projection.project(forks.left_base, 0, camera_state, projection.default_tuning);
+    const right_mast_base = projection.project(forks.right_base, 0, camera_state, projection.default_tuning);
+    const left_mast_top = projection.project(forks.left_base, mast_top_z, camera_state, projection.default_tuning);
+    const right_mast_top = projection.project(forks.right_base, mast_top_z, camera_state, projection.default_tuning);
+
+    line(playdate, left_mast_base, left_mast_top, 2, black);
+    line(playdate, right_mast_base, right_mast_top, 2, black);
+    line(playdate, left_mast_top, right_mast_top, 2, black);
+}
+
+pub fn drawForkliftCanopy(
+    playdate: *pdapi.PlaydateAPI,
+    forklift: vehicle.Forklift,
+    camera_state: camera.Camera,
+) void {
+    const white: pdapi.LCDColor =
+        @intCast(@intFromEnum(pdapi.LCDSolidColor.ColorWhite));
+    const forward = math2.forwardVector(forklift.heading_rad);
+    const right = math2.Vec2{
+        .x = @cos(forklift.heading_rad),
+        .y = @sin(forklift.heading_rad),
+    };
+    const body_center = vehicle.bodyCenter(forklift);
     const canopy_center = offsetPoint(
         body_center,
         forward,
@@ -339,6 +377,23 @@ pub fn drawForklift(
     line(playdate, left_support_base, canopy[3], 2, black);
     line(playdate, right_support_base, canopy[2], 2, black);
     drawQuad(playdate, canopy, white, black);
+}
+
+pub fn drawForkliftForks(
+    playdate: *pdapi.PlaydateAPI,
+    forklift: vehicle.Forklift,
+    camera_state: camera.Camera,
+) void {
+    const fork_z = vehicle.forkZ(forklift.fork_height);
+    const forks = vehicle.forkGeometry(forklift);
+    const left_base = projection.project(forks.left_base, fork_z, camera_state, projection.default_tuning);
+    const left_tip = projection.project(forks.left_tip, fork_z, camera_state, projection.default_tuning);
+    const right_base = projection.project(forks.right_base, fork_z, camera_state, projection.default_tuning);
+    const right_tip = projection.project(forks.right_tip, fork_z, camera_state, projection.default_tuning);
+
+    line(playdate, left_base, left_tip, 3, black);
+    line(playdate, right_base, right_tip, 3, black);
+    line(playdate, left_base, right_base, 3, black);
 }
 
 pub fn drawPallet(
@@ -906,6 +961,21 @@ test "rack-facing edges follow camera yaw" {
     }
 }
 
+test "canopy is behind forks only when the lift faces the camera" {
+    const camera_state = camera.Camera{};
+    const toward_camera = vehicle.Forklift{
+        .position = .{ .x = 100, .y = 100 },
+        .heading_rad = std.math.pi,
+    };
+    const away_from_camera = vehicle.Forklift{
+        .position = .{ .x = 100, .y = 100 },
+        .heading_rad = 0,
+    };
+
+    try std.testing.expect(canopyBehindForks(toward_camera, camera_state));
+    try std.testing.expect(!canopyBehindForks(away_from_camera, camera_state));
+}
+
 pub fn drawObstacle(
     playdate: *pdapi.PlaydateAPI,
     obstacle: collision.Rect,
@@ -948,10 +1018,43 @@ pub fn drawShelf(
         );
     }
 
+    var front_depth = camera.depth(world_corners[0], camera_state);
+    for (world_corners[1..]) |corner| {
+        front_depth = @max(front_depth, camera.depth(corner, camera_state));
+    }
+
+    // Back legs are behind the opaque shelf surface.
+    for (0..4) |index| {
+        line(playdate, ground[index], top[index], 1, color);
+    }
+
+    const white: pdapi.LCDColor =
+        @intCast(@intFromEnum(pdapi.LCDSolidColor.ColorWhite));
+    playdate.graphics.fillTriangle(
+        @intFromFloat(top[0].x),
+        @intFromFloat(top[0].y),
+        @intFromFloat(top[1].x),
+        @intFromFloat(top[1].y),
+        @intFromFloat(top[2].x),
+        @intFromFloat(top[2].y),
+        white,
+    );
+    playdate.graphics.fillTriangle(
+        @intFromFloat(top[0].x),
+        @intFromFloat(top[0].y),
+        @intFromFloat(top[2].x),
+        @intFromFloat(top[2].y),
+        @intFromFloat(top[3].x),
+        @intFromFloat(top[3].y),
+        white,
+    );
+
     for (0..4) |index| {
         const next = (index + 1) % 4;
         line(playdate, top[index], top[next], 2, color);
-        line(playdate, ground[index], top[index], 1, color);
+        if (camera.depth(world_corners[index], camera_state) >= front_depth - 0.001) {
+            line(playdate, ground[index], top[index], 1, color);
+        }
     }
 }
 
