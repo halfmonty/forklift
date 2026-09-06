@@ -8,6 +8,7 @@ const cargo = @import("../sim/cargo.zig");
 const math2 = @import("../sim/math2.zig");
 const vehicle = @import("../sim/vehicle.zig");
 const render = @import("../render/renderer.zig");
+const compositor = @import("../render/compositor.zig");
 const config = @import("../config.zig");
 
 const production_stages = [_]campaign.StageDefinition{
@@ -152,38 +153,15 @@ pub fn drawWarehouse(
     }
 }
 
-pub fn drawShelfOccluders(
+pub fn collectOpaqueSurfaces(
     stage_id: campaign.StageId,
-    renderer: *render.Renderer,
-    component_depth: f32,
-    component_z: f32,
-    draw_before_component: bool,
+    collector: *compositor.OpaqueSurfaceCollector,
 ) void {
     switch (stage_id) {
-        .training_facility => training_facility.warehouse.drawShelfOccluders(
-            renderer,
-            component_depth,
-            component_z,
-            draw_before_component,
-        ),
-        .stress_test => stress_test.warehouse.drawShelfOccluders(
-            renderer,
-            component_depth,
-            component_z,
-            draw_before_component,
-        ),
-        .first_warehouse => first_warehouse.warehouse.drawShelfOccluders(
-            renderer,
-            component_depth,
-            component_z,
-            draw_before_component,
-        ),
-        .feature_test => feature_test.warehouse.drawShelfOccluders(
-            renderer,
-            component_depth,
-            component_z,
-            draw_before_component,
-        ),
+        .training_facility => training_facility.warehouse.collectOpaqueSurfaces(collector),
+        .stress_test => stress_test.warehouse.collectOpaqueSurfaces(collector),
+        .first_warehouse => first_warehouse.warehouse.collectOpaqueSurfaces(collector),
+        .feature_test => feature_test.warehouse.collectOpaqueSurfaces(collector),
     }
 }
 

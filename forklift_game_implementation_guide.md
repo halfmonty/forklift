@@ -63,6 +63,8 @@ The game is currently a four-job warehouse prototype with standard, heavy, and l
 
 The camera projects all rotating world geometry through its cardinal view transform. Ground rectangles use projected corners, and rack foreground occlusion compares screen-relative camera depth rather than raw world Y.
 
+The current depth-sweep renderer contract is documented in [Better Occlusion and Render Composition Plan](docs/betterocclusion.md).
+
 ## Camera-orbit completion gate
 
 **Status:** complete on hardware.

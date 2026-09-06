@@ -6,6 +6,7 @@ const camera = @import("../render/camera.zig");
 const cargo = @import("../sim/cargo.zig");
 const jobs = @import("../sim/jobs.zig");
 const render = @import("../render/renderer.zig");
+const compositor = @import("../render/compositor.zig");
 const audio = @import("../audio/audio.zig");
 const pdna_effects = @import("../audio/pdna_effects.zig");
 const stages = @import("../content/stages.zig");
@@ -643,108 +644,13 @@ fn draw(game: *Game) void {
     renderer.destination(shift.jobs[game.job_index].destination);
     stages.drawDecorativePallets(stage_id, &renderer);
     renderer.palletShadow(game.pallet);
-
-    const body_depth = camera.depth(game.forklift.position, game.camera);
-    const canopy_behind_forks = render.canopyBehindForks(game.forklift, game.camera);
-    drawWithShelfOcclusion(
-        game,
+    var surface_collector = compositor.OpaqueSurfaceCollector.init(&renderer);
+    stages.collectOpaqueSurfaces(stage_id, &surface_collector);
+    var scene_compositor = compositor.Compositor.init(
         &renderer,
-        stage_id,
-        body_depth,
-        0,
-        .forklift_base,
+        surface_collector.slice(),
     );
-
-    if (canopy_behind_forks) {
-        drawWithShelfOcclusion(
-            game,
-            &renderer,
-            stage_id,
-            body_depth,
-            0,
-            .forklift_canopy,
-        );
-        drawWithShelfOcclusion(
-            game,
-            &renderer,
-            stage_id,
-            body_depth,
-            0,
-            .forklift_mast,
-        );
-    } else {
-        drawWithShelfOcclusion(
-            game,
-            &renderer,
-            stage_id,
-            body_depth,
-            0,
-            .forklift_mast,
-        );
-    }
-
-    const pallet_render_z = if (game.pallet.state == .carried)
-        game.pallet.z
-    else
-        game.pallet.support_z;
-    const pallet_depth = camera.depth(game.pallet.position, game.camera);
-    drawWithShelfOcclusion(
-        game,
-        &renderer,
-        stage_id,
-        pallet_depth,
-        pallet_render_z,
-        .pallet,
-    );
-
-    const forks = vehicle.forkGeometry(game.forklift);
-    const fork_depth = camera.depth(.{
-        .x = (forks.left_base.x + forks.right_tip.x) * 0.5,
-        .y = (forks.left_base.y + forks.right_tip.y) * 0.5,
-    }, game.camera);
-    drawWithShelfOcclusion(
-        game,
-        &renderer,
-        stage_id,
-        fork_depth,
-        vehicle.forkZ(game.forklift.fork_height),
-        .forklift_forks,
-    );
-
-    if (!canopy_behind_forks) {
-        drawWithShelfOcclusion(
-            game,
-            &renderer,
-            stage_id,
-            body_depth,
-            0,
-            .forklift_canopy,
-        );
-
-        if (pallet_render_z >= vehicle.forkZ(.rack_low)) {
-            drawWithShelfOcclusion(
-                game,
-                &renderer,
-                stage_id,
-                pallet_depth,
-                pallet_render_z,
-                .pallet,
-            );
-        }
-
-        if (game.forklift.fork_height == .rack_low or
-            game.forklift.fork_height == .rack_high)
-        {
-            drawWithShelfOcclusion(
-                game,
-                &renderer,
-                stage_id,
-                fork_depth,
-                vehicle.forkZ(game.forklift.fork_height),
-                .forklift_forks,
-            );
-        }
-    }
+    scene_compositor.drawDynamic(game.forklift, game.pallet);
 
     stages.drawWarehouse(stage_id, &renderer, .after_actors, entity_depth);
     const job_label = switch (game.job_state) {
@@ -754,8 +660,7 @@ fn draw(game: *Game) void {
     };
     const pickup = cargo.evaluateForkEntry(game.forklift, game.pallet, pickup_tuning);
     const render_stats = renderer.stats;
-    const render_passes: usize = 10;
-    const text = std.fmt.bufPrint(&game.debug_buffer, "job={s}\ntime={d:.1}\npickup={}\ncarried={}\nangle={d:.0} depth={d:.1}\nfork_z={d:.0}\nframe={d:.1}ms\nsubmit={d} cull={d}\npasses={d}", .{
+    const text = std.fmt.bufPrint(&game.debug_buffer, "job={s}\ntime={d:.1}\npickup={}\ncarried={}\nangle={d:.0} depth={d:.1}\nfork_z={d:.0}\nframe={d:.1}ms\nsubmit={d} cull={d}", .{
         job_label,
         game.shift_elapsed_seconds,
         pickup.valid and game.forklift.fork_height == .floor,
@@ -766,55 +671,9 @@ fn draw(game: *Game) void {
         game.frame_ms,
         render_stats.submitted,
         render_stats.culled,
-        render_passes,
     }) catch unreachable;
     _ = playdate.graphics.drawText(text.ptr, text.len, .UTF8Encoding, 8, 8);
     playdate.system.drawFPS(320, 8);
-}
-
-const ShelfOcclusionComponent = enum {
-    forklift_base,
-    forklift_canopy,
-    forklift_mast,
-    forklift_forks,
-    pallet,
-};
-
-fn drawWithShelfOcclusion(
-    game: *Game,
-    renderer: *render.Renderer,
-    stage_id: campaign.StageId,
-    component_depth: f32,
-    component_z: f32,
-    component: ShelfOcclusionComponent,
-) void {
-    stages.drawShelfOccluders(
-        stage_id,
-        renderer,
-        component_depth,
-        component_z,
-        true,
-    );
-
-    switch (component) {
-        .forklift_base => renderer.forkliftBase(game.forklift),
-        .forklift_canopy => renderer.forkliftCanopy(game.forklift),
-        .forklift_mast => renderer.forkliftMast(game.forklift),
-        .forklift_forks => renderer.forkliftForks(game.forklift),
-        .pallet => {
-            var pallet = game.pallet;
-            pallet.z = component_z;
-            renderer.pallet(pallet);
-        },
-    }
-
-    stages.drawShelfOccluders(
-        stage_id,
-        renderer,
-        component_depth,
-        component_z,
-        false,
-    );
 }
 
 fn forkliftCollides(

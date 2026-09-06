@@ -39,11 +39,7 @@ pub const Renderer = struct {
     }
 
     fn acceptsRect(self: *Renderer, rect: collision.Rect) bool {
-        const bounds = camera.visibleWorldBounds(self.camera_state);
-        const visible = rect.x + rect.width >= bounds.min.x - self.cull_margin and
-            rect.x <= bounds.max.x + self.cull_margin and
-            rect.y + rect.height >= bounds.min.y - self.cull_margin and
-            rect.y <= bounds.max.y + self.cull_margin;
+        const visible = self.isRectVisible(rect);
 
         if (visible) {
             self.stats.submitted += 1;
@@ -51,6 +47,14 @@ pub const Renderer = struct {
             self.stats.culled += 1;
         }
         return visible;
+    }
+
+    pub fn isRectVisible(self: Renderer, rect: collision.Rect) bool {
+        const bounds = camera.visibleWorldBounds(self.camera_state);
+        return rect.x + rect.width >= bounds.min.x - self.cull_margin and
+            rect.x <= bounds.max.x + self.cull_margin and
+            rect.y + rect.height >= bounds.min.y - self.cull_margin and
+            rect.y <= bounds.max.y + self.cull_margin;
     }
 
     fn acceptsPoint(self: *Renderer, point: math2.Vec2) bool {
@@ -156,35 +160,12 @@ pub const Renderer = struct {
         drawShelf(self.playdate, zone, support_z, self.camera_state, black);
     }
 
-    pub fn shelfOccluder(
+    pub fn opaqueSurface(
         self: *Renderer,
         zone: collision.Rect,
         support_z: f32,
-        component_depth: f32,
-        component_z: f32,
-        draw_before_component: bool,
     ) void {
-        if (component_z >= support_z) return;
-        if (!self.acceptsRect(zone)) return;
-
-        const shelf_depth = self.rectFrontDepth(zone);
-        const draw_before = component_depth >= shelf_depth;
-        if (draw_before != draw_before_component) return;
-
         drawShelf(self.playdate, zone, support_z, self.camera_state, black);
-    }
-
-    pub fn rectFrontDepth(self: Renderer, rect: collision.Rect) f32 {
-        return @max(
-            @max(
-                camera.depth(.{ .x = rect.x, .y = rect.y }, self.camera_state),
-                camera.depth(.{ .x = rect.x + rect.width, .y = rect.y }, self.camera_state),
-            ),
-            @max(
-                camera.depth(.{ .x = rect.x + rect.width, .y = rect.y + rect.height }, self.camera_state),
-                camera.depth(.{ .x = rect.x, .y = rect.y + rect.height }, self.camera_state),
-            ),
-        );
     }
 
     pub fn palletShadow(self: *Renderer, pallet_data: cargo.Pallet) void {
@@ -1076,34 +1057,5 @@ pub fn drawShelf(
         if (camera.depth(world_corners[index], camera_state) >= front_depth - 0.001) {
             line(playdate, ground[index], top[index], 1, color);
         }
-    }
-}
-
-fn drawStorageRackFrame(
-    playdate: *pdapi.PlaydateAPI,
-    frame: collision.Rect,
-    top_z: f32,
-    camera_state: camera.Camera,
-    color: pdapi.LCDColor,
-) void {
-    const ground = projectedRectCorners(frame, 0, camera_state);
-    const low = projectedRectCorners(
-        frame,
-        vehicle.forkZ(.rack_low),
-        camera_state,
-    );
-    const top = projectedRectCorners(frame, top_z, camera_state);
-
-    for (0..4) |index| {
-        const next = (index + 1) % 4;
-
-        // Upright posts occupy the actual collision-frame corners.
-        line(playdate, ground[index], top[index], 2, color);
-
-        // Low shelf support beam.
-        line(playdate, low[index], low[next], 2, color);
-
-        // Top beam: same as low for a low-only rack, higher for stacked.
-        line(playdate, top[index], top[next], 2, color);
     }
 }

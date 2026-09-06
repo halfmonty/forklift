@@ -42,7 +42,7 @@ test "z projects upward" {
     const result = project(
         .{ .x = 100, .y = 100 },
         12,
-        .{},
+        .{ .focus = .{ .x = 200, .y = 120 } },
         .{ .z_skew_x = 0, .z_skew_y = 0.75, .perspective_strength = 0 },
     );
 

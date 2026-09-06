@@ -3,6 +3,7 @@ const cargo = @import("../sim/cargo.zig");
 const collision = @import("../sim/collision.zig");
 const math2 = @import("../sim/math2.zig");
 const render = @import("../render/renderer.zig");
+const compositor = @import("../render/compositor.zig");
 const vehicle = @import("../sim/vehicle.zig");
 
 pub const DrawPhase = enum {
@@ -56,39 +57,6 @@ pub const Rack = struct {
     }
 };
 
-pub const StackedRack = struct {
-    zone: collision.Rect,
-    low_support_z: f32,
-    high_support_z: f32,
-
-    pub fn collisionRect(_: StackedRack) ?collision.Rect {
-        return null;
-    }
-
-    pub fn draw(
-        self: StackedRack,
-        renderer: *render.Renderer,
-        phase: DrawPhase,
-        actor_depth: f32,
-    ) void {
-        _ = actor_depth;
-        _ = self;
-        _ = renderer;
-        _ = phase;
-    }
-
-    pub fn drawOccluder(
-        self: StackedRack,
-        renderer: *render.Renderer,
-        component_depth: f32,
-        component_z: f32,
-        draw_before_component: bool,
-    ) void {
-        renderer.shelfOccluder(self.zone, self.low_support_z, component_depth, component_z, draw_before_component);
-        renderer.shelfOccluder(self.zone, self.high_support_z, component_depth, component_z, draw_before_component);
-    }
-};
-
 pub const StorageRackLevel = enum {
     low,
     high,
@@ -114,16 +82,19 @@ pub const StorageRack = struct {
         _ = phase;
     }
 
-    pub fn drawOccluder(
+    pub fn emitOpaqueSurfaces(
         self: StorageRack,
-        renderer: *render.Renderer,
-        component_depth: f32,
-        component_z: f32,
-        draw_before_component: bool,
+        collector: *compositor.OpaqueSurfaceCollector,
     ) void {
-        renderer.shelfOccluder(self.bounds, vehicle.forkZ(.rack_low), component_depth, component_z, draw_before_component);
+        collector.append(.{
+            .bounds = self.bounds,
+            .support_z = vehicle.forkZ(.rack_low),
+        });
         if (self.level == .high) {
-            renderer.shelfOccluder(self.bounds, vehicle.forkZ(.rack_high), component_depth, component_z, draw_before_component);
+            collector.append(.{
+                .bounds = self.bounds,
+                .support_z = vehicle.forkZ(.rack_high),
+            });
         }
     }
 
@@ -281,14 +252,14 @@ pub const Shelf = struct {
         _ = phase;
     }
 
-    pub fn drawOccluder(
+    pub fn emitOpaqueSurfaces(
         self: Shelf,
-        renderer: *render.Renderer,
-        component_depth: f32,
-        component_z: f32,
-        draw_before_component: bool,
+        collector: *compositor.OpaqueSurfaceCollector,
     ) void {
-        renderer.shelfOccluder(self.zone, self.support_z, component_depth, component_z, draw_before_component);
+        collector.append(.{
+            .bounds = self.zone,
+            .support_z = self.support_z,
+        });
     }
 };
 
@@ -424,21 +395,13 @@ pub fn StaticLevel(comptime objects: anytype) type {
             }
         }
 
-        pub fn drawShelfOccluders(
+        pub fn collectOpaqueSurfaces(
             _: @This(),
-            renderer: *render.Renderer,
-            component_depth: f32,
-            component_z: f32,
-            draw_before_component: bool,
+            collector: *compositor.OpaqueSurfaceCollector,
         ) void {
             inline for (objects) |object| {
-                if (@hasDecl(@TypeOf(object), "drawOccluder")) {
-                    object.drawOccluder(
-                        renderer,
-                        component_depth,
-                        component_z,
-                        draw_before_component,
-                    );
+                if (@hasDecl(@TypeOf(object), "emitOpaqueSurfaces")) {
+                    object.emitOpaqueSurfaces(collector);
                 }
             }
         }
@@ -465,4 +428,30 @@ test "static level checks object collision" {
     try @import("std").testing.expect(
         test_level.collides(forklift, null),
     );
+}
+
+test "storage racks emit their configured opaque shelf surfaces" {
+    var renderer_instance = render.Renderer{
+        .playdate = undefined,
+        .camera_state = .{},
+        .cull_margin = 0,
+    };
+    var collector = compositor.OpaqueSurfaceCollector.init(&renderer_instance);
+    const level = StaticLevel(.{
+        StorageRack{
+            .bounds = .{ .x = 0, .y = 0, .width = 56, .height = 140 },
+            .level = .low,
+        },
+        StorageRack{
+            .bounds = .{ .x = 100, .y = 0, .width = 56, .height = 140 },
+            .level = .high,
+        },
+    }){};
+
+    level.collectOpaqueSurfaces(&collector);
+
+    try std.testing.expectEqual(@as(usize, 3), collector.len);
+    try std.testing.expectEqual(vehicle.forkZ(.rack_low), collector.items[0].support_z);
+    try std.testing.expectEqual(vehicle.forkZ(.rack_low), collector.items[1].support_z);
+    try std.testing.expectEqual(vehicle.forkZ(.rack_high), collector.items[2].support_z);
 }

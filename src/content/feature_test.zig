@@ -9,13 +9,6 @@ const vehicle = @import("../sim/vehicle.zig");
 pub const forklift_spawn = math2.Vec2{ .x = 1200, .y = 800 };
 pub const world_size = math2.Vec2{ .x = 2400, .y = 1600 };
 
-const stacked_rack_zone = collision.Rect{
-    .x = 1520,
-    .y = 600,
-    .width = 160,
-    .height = 120,
-};
-
 // const low_rack = static_level.StorageRack{
 //     .bounds = .{ .x = 1572, .y = 844, .width = 56, .height = 140 },
 //     .level = .low,
@@ -86,14 +79,4 @@ pub fn palletDropSupport(
     //     return support_z;
     // }
     return stacked_rack.dropSupport(fork_height, pallet);
-}
-
-fn palletFitsStackedRack(pallet: cargo.Pallet) bool {
-    return collision.obbContainedInRect(
-        pallet.position,
-        pallet.footprint.half_length,
-        pallet.footprint.half_width,
-        pallet.heading_rad,
-        stacked_rack_zone,
-    );
 }
