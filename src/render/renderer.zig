@@ -168,6 +168,28 @@ pub const Renderer = struct {
         drawShelf(self.playdate, zone, support_z, self.camera_state, black);
     }
 
+    pub fn opaqueSurfaceFragment(
+        self: *Renderer,
+        zone: collision.Rect,
+        support_z: f32,
+        depth_min: f32,
+        depth_max: f32,
+        draw_legs_before: bool,
+        draw_front_legs_after: bool,
+    ) void {
+        drawShelfFragment(
+            self.playdate,
+            zone,
+            support_z,
+            depth_min,
+            depth_max,
+            draw_legs_before,
+            draw_front_legs_after,
+            self.camera_state,
+            black,
+        );
+    }
+
     pub fn palletShadow(self: *Renderer, pallet_data: cargo.Pallet) void {
         if (!self.acceptsPallet(pallet_data)) return;
         drawPalletShadow(self.playdate, pallet_data, self.camera_state, black);
@@ -1058,4 +1080,216 @@ pub fn drawShelf(
             line(playdate, ground[index], top[index], 1, color);
         }
     }
+}
+
+const max_shelf_fragment_points = 8;
+
+const WorldPolygon = struct {
+    points: [max_shelf_fragment_points]math2.Vec2 = undefined,
+    len: usize = 0,
+};
+
+fn drawShelfFragment(
+    playdate: *pdapi.PlaydateAPI,
+    zone: collision.Rect,
+    support_z: f32,
+    depth_min: f32,
+    depth_max: f32,
+    draw_legs_before: bool,
+    draw_front_legs_after: bool,
+    camera_state: camera.Camera,
+    color: pdapi.LCDColor,
+) void {
+    const corners = shelfWorldCorners(zone);
+
+    if (draw_legs_before) {
+        for (corners) |corner| {
+            drawShelfLeg(playdate, corner, support_z, camera_state, color);
+        }
+    }
+
+    const polygon = clipShelfToDepthBand(zone, depth_min, depth_max, camera_state);
+    if (polygon.len >= 3) {
+        const white: pdapi.LCDColor =
+            @intCast(@intFromEnum(pdapi.LCDSolidColor.ColorWhite));
+        const origin = projection.project(
+            polygon.points[0],
+            support_z,
+            camera_state,
+            projection.default_tuning,
+        );
+        for (1..polygon.len - 1) |index| {
+            const second = projection.project(
+                polygon.points[index],
+                support_z,
+                camera_state,
+                projection.default_tuning,
+            );
+            const third = projection.project(
+                polygon.points[index + 1],
+                support_z,
+                camera_state,
+                projection.default_tuning,
+            );
+            playdate.graphics.fillTriangle(
+                @intFromFloat(origin.x),
+                @intFromFloat(origin.y),
+                @intFromFloat(second.x),
+                @intFromFloat(second.y),
+                @intFromFloat(third.x),
+                @intFromFloat(third.y),
+                white,
+            );
+        }
+    }
+
+    // Draw only original perimeter segments. Clipping boundaries are internal to
+    // the shelf and must not appear as lines while the camera rotates.
+    for (0..4) |index| {
+        const segment = clipSegmentToDepthBand(
+            corners[index],
+            corners[(index + 1) % 4],
+            depth_min,
+            depth_max,
+            camera_state,
+        ) orelse continue;
+        line(
+            playdate,
+            projection.project(segment[0], support_z, camera_state, projection.default_tuning),
+            projection.project(segment[1], support_z, camera_state, projection.default_tuning),
+            2,
+            color,
+        );
+    }
+
+    if (draw_front_legs_after) {
+        var front_depth = camera.depth(corners[0], camera_state);
+        for (corners[1..]) |corner| {
+            front_depth = @max(front_depth, camera.depth(corner, camera_state));
+        }
+        for (corners) |corner| {
+            if (camera.depth(corner, camera_state) >= front_depth - 0.001) {
+                drawShelfLeg(playdate, corner, support_z, camera_state, color);
+            }
+        }
+    }
+}
+
+fn shelfWorldCorners(zone: collision.Rect) [4]math2.Vec2 {
+    return .{
+        .{ .x = zone.x, .y = zone.y },
+        .{ .x = zone.x + zone.width, .y = zone.y },
+        .{ .x = zone.x + zone.width, .y = zone.y + zone.height },
+        .{ .x = zone.x, .y = zone.y + zone.height },
+    };
+}
+
+fn drawShelfLeg(
+    playdate: *pdapi.PlaydateAPI,
+    position: math2.Vec2,
+    support_z: f32,
+    camera_state: camera.Camera,
+    color: pdapi.LCDColor,
+) void {
+    line(
+        playdate,
+        projection.project(position, 0, camera_state, projection.default_tuning),
+        projection.project(position, support_z, camera_state, projection.default_tuning),
+        1,
+        color,
+    );
+}
+
+fn clipShelfToDepthBand(
+    zone: collision.Rect,
+    depth_min: f32,
+    depth_max: f32,
+    camera_state: camera.Camera,
+) WorldPolygon {
+    var polygon = WorldPolygon{ .len = 4 };
+    const corners = shelfWorldCorners(zone);
+    @memcpy(polygon.points[0..4], corners[0..]);
+    polygon = clipPolygonAtDepth(polygon, depth_min, true, camera_state);
+    return clipPolygonAtDepth(polygon, depth_max, false, camera_state);
+}
+
+fn clipPolygonAtDepth(
+    input: WorldPolygon,
+    threshold: f32,
+    keep_greater: bool,
+    camera_state: camera.Camera,
+) WorldPolygon {
+    var output = WorldPolygon{};
+    if (input.len == 0) return output;
+
+    var previous = input.points[input.len - 1];
+    var previous_depth = camera.depth(previous, camera_state);
+    var previous_inside = depthInside(previous_depth, threshold, keep_greater);
+
+    for (input.points[0..input.len]) |current| {
+        const current_depth = camera.depth(current, camera_state);
+        const current_inside = depthInside(current_depth, threshold, keep_greater);
+
+        if (current_inside != previous_inside) {
+            const denominator = current_depth - previous_depth;
+            const amount = if (@abs(denominator) < 0.0001)
+                0.0
+            else
+                (threshold - previous_depth) / denominator;
+            appendPolygonPoint(&output, .{
+                .x = previous.x + (current.x - previous.x) * amount,
+                .y = previous.y + (current.y - previous.y) * amount,
+            });
+        }
+        if (current_inside) appendPolygonPoint(&output, current);
+
+        previous = current;
+        previous_depth = current_depth;
+        previous_inside = current_inside;
+    }
+    return output;
+}
+
+fn depthInside(depth: f32, threshold: f32, keep_greater: bool) bool {
+    return if (keep_greater) depth >= threshold - 0.001 else depth <= threshold + 0.001;
+}
+
+fn appendPolygonPoint(polygon: *WorldPolygon, point: math2.Vec2) void {
+    if (polygon.len == polygon.points.len) @panic("shelf fragment polygon capacity exceeded");
+    polygon.points[polygon.len] = point;
+    polygon.len += 1;
+}
+
+fn clipSegmentToDepthBand(
+    start: math2.Vec2,
+    end: math2.Vec2,
+    depth_min: f32,
+    depth_max: f32,
+    camera_state: camera.Camera,
+) ?[2]math2.Vec2 {
+    const start_depth = camera.depth(start, camera_state);
+    const end_depth = camera.depth(end, camera_state);
+    const depth_delta = end_depth - start_depth;
+
+    if (@abs(depth_delta) < 0.0001) {
+        if (start_depth < depth_min - 0.001 or start_depth > depth_max + 0.001) return null;
+        return .{ start, end };
+    }
+
+    const first = (depth_min - start_depth) / depth_delta;
+    const second = (depth_max - start_depth) / depth_delta;
+    const amount_min = @max(@as(f32, 0), @min(first, second));
+    const amount_max = @min(@as(f32, 1), @max(first, second));
+    if (amount_min > amount_max + 0.001) return null;
+
+    return .{
+        .{
+            .x = start.x + (end.x - start.x) * amount_min,
+            .y = start.y + (end.y - start.y) * amount_min,
+        },
+        .{
+            .x = start.x + (end.x - start.x) * amount_max,
+            .y = start.y + (end.y - start.y) * amount_max,
+        },
+    };
 }

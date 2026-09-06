@@ -7,12 +7,21 @@ const camera = @import("camera.zig");
 const renderer_module = @import("renderer.zig");
 
 pub const max_opaque_surfaces = 64;
+const max_surface_fragments = max_opaque_surfaces * 6;
 pub const pallet_top_z_offset: f32 = 6;
 
 pub const OpaqueSurface = struct {
     bounds: collision.Rect,
     support_z: f32,
-    sort_depth: f32 = 0,
+};
+
+pub const SurfaceFragment = struct {
+    surface: OpaqueSurface,
+    depth_min: f32,
+    depth_max: f32,
+    sort_depth: f32,
+    draw_legs_before: bool,
+    draw_front_legs_after: bool,
 };
 
 pub const OpaqueSurfaceCollector = struct {
@@ -89,8 +98,15 @@ const RendererSink = struct {
     forklift: vehicle.Forklift,
     pallet: cargo.Pallet,
 
-    pub fn drawSurface(self: *RendererSink, surface: OpaqueSurface) void {
-        self.renderer.opaqueSurface(surface.bounds, surface.support_z);
+    pub fn drawSurface(self: *RendererSink, fragment: SurfaceFragment) void {
+        self.renderer.opaqueSurfaceFragment(
+            fragment.surface.bounds,
+            fragment.surface.support_z,
+            fragment.depth_min,
+            fragment.depth_max,
+            fragment.draw_legs_before,
+            fragment.draw_front_legs_after,
+        );
     }
 
     pub fn drawPart(self: *RendererSink, part: RenderPart) void {
@@ -115,28 +131,34 @@ pub fn compose(
     camera_state: camera.Camera,
     sink: anytype,
 ) void {
-    for (surfaces) |*surface| {
-        surface.sort_depth = surfaceGroundDepth(surface.*, camera_state);
-    }
-    sortSurfaces(surfaces);
     var parts = dynamicParts(forklift, pallet, camera_state);
     sortParts(&parts);
 
+    var fragments: [max_surface_fragments]SurfaceFragment = undefined;
+    const fragment_count = buildSurfaceFragments(
+        surfaces,
+        &parts,
+        camera_state,
+        &fragments,
+    );
+    const active_fragments = fragments[0..fragment_count];
+    sortSurfaceFragments(active_fragments);
+
     var surface_index: usize = 0;
     var part_index: usize = 0;
-    while (surface_index < surfaces.len or part_index < parts.len) {
-        const take_surface = surface_index < surfaces.len and
+    while (surface_index < active_fragments.len or part_index < parts.len) {
+        const take_surface = surface_index < active_fragments.len and
             (part_index == parts.len or
-                surfaces[surface_index].sort_depth <= parts[part_index].depth);
+                active_fragments[surface_index].sort_depth <= parts[part_index].depth);
 
         if (take_surface) {
-            const surface = surfaces[surface_index];
-            sink.drawSurface(surface);
+            const fragment = active_fragments[surface_index];
+            sink.drawSurface(fragment);
 
-            // The surface just covered all previously drawn lower geometry.
+            // The fragment just covered all previously drawn lower geometry.
             // Replay only parts whose visible plane is at or above it.
             for (parts[0..part_index]) |part| {
-                if (!surfaceOccludesPart(surface, part.occlusion_z)) {
+                if (!surfaceOccludesPart(fragment.surface, part.occlusion_z)) {
                     sink.drawPart(part);
                 }
             }
@@ -148,12 +170,120 @@ pub fn compose(
     }
 }
 
+fn buildSurfaceFragments(
+    surfaces: []const OpaqueSurface,
+    parts: *const [5]RenderPart,
+    camera_state: camera.Camera,
+    output: *[max_surface_fragments]SurfaceFragment,
+) usize {
+    var unique_depths: [5]f32 = undefined;
+    var unique_depth_count: usize = 0;
+    for (parts) |part| {
+        var duplicate = false;
+        for (unique_depths[0..unique_depth_count]) |depth| {
+            if (@abs(depth - part.depth) < 0.001) {
+                duplicate = true;
+                break;
+            }
+        }
+        if (!duplicate) {
+            unique_depths[unique_depth_count] = part.depth;
+            unique_depth_count += 1;
+        }
+    }
+    sortDepths(unique_depths[0..unique_depth_count]);
+
+    var output_len: usize = 0;
+    for (surfaces) |surface| {
+        const range = surfaceDepthRange(surface, camera_state);
+        var band_start = range.min;
+        var first = true;
+
+        for (unique_depths[0..unique_depth_count]) |depth| {
+            if (depth <= range.min + 0.001 or depth >= range.max - 0.001) continue;
+            appendSurfaceFragment(
+                output,
+                &output_len,
+                surface,
+                band_start,
+                depth,
+                first,
+                false,
+            );
+            band_start = depth;
+            first = false;
+        }
+
+        appendSurfaceFragment(
+            output,
+            &output_len,
+            surface,
+            band_start,
+            range.max,
+            first,
+            true,
+        );
+    }
+    return output_len;
+}
+
+fn appendSurfaceFragment(
+    output: *[max_surface_fragments]SurfaceFragment,
+    output_len: *usize,
+    surface: OpaqueSurface,
+    depth_min: f32,
+    depth_max: f32,
+    draw_legs_before: bool,
+    draw_front_legs_after: bool,
+) void {
+    if (output_len.* == output.len) {
+        @panic("opaque surface fragment capacity exceeded");
+    }
+    output[output_len.*] = .{
+        .surface = surface,
+        .depth_min = depth_min,
+        .depth_max = depth_max,
+        .sort_depth = (depth_min + depth_max) * 0.5,
+        .draw_legs_before = draw_legs_before,
+        .draw_front_legs_after = draw_front_legs_after,
+    };
+    output_len.* += 1;
+}
+
+fn sortDepths(depths: []f32) void {
+    if (depths.len < 2) return;
+    for (1..depths.len) |index| {
+        const depth = depths[index];
+        var insertion = index;
+        while (insertion > 0 and depth < depths[insertion - 1]) {
+            depths[insertion] = depths[insertion - 1];
+            insertion -= 1;
+        }
+        depths[insertion] = depth;
+    }
+}
+
 fn dynamicParts(
     forklift: vehicle.Forklift,
     pallet: cargo.Pallet,
     camera_state: camera.Camera,
 ) [5]RenderPart {
-    const vehicle_depth = camera.depth(forklift.position, camera_state);
+    const forward = math2.forwardVector(forklift.heading_rad);
+    const body_center = vehicle.bodyCenter(forklift);
+    const canopy_center = math2.add(body_center, math2.scale(forward, -4));
+    const fork_geometry = vehicle.forkGeometry(forklift);
+    const mast_center = math2.Vec2{
+        .x = (fork_geometry.left_base.x + fork_geometry.right_base.x) * 0.5,
+        .y = (fork_geometry.left_base.y + fork_geometry.right_base.y) * 0.5,
+    };
+    const fork_center = math2.Vec2{
+        .x = (fork_geometry.left_base.x + fork_geometry.right_tip.x) * 0.5,
+        .y = (fork_geometry.left_base.y + fork_geometry.right_tip.y) * 0.5,
+    };
+    const base_depth = camera.depth(body_center, camera_state);
+    const canopy_depth = camera.depth(canopy_center, camera_state);
+    const mast_depth = camera.depth(mast_center, camera_state);
+    const fork_depth = camera.depth(fork_center, camera_state);
     const facing_camera = renderer_module.canopyBehindForks(forklift, camera_state);
     const pallet_z = (if (pallet.state == .carried) pallet.z else pallet.support_z) +
         pallet_top_z_offset;
@@ -161,32 +291,32 @@ fn dynamicParts(
     return .{
         .{
             .kind = .forklift_base,
-            .depth = vehicle_depth,
+            .depth = base_depth,
             .occlusion_z = 0,
             .local_order = 0,
         },
         .{
             .kind = .forklift_canopy,
-            .depth = vehicle_depth,
+            .depth = canopy_depth,
             .occlusion_z = 0,
             .local_order = if (facing_camera) 1 else 4,
         },
         .{
             .kind = .forklift_mast,
-            .depth = vehicle_depth,
+            .depth = mast_depth,
             .occlusion_z = 0,
             .local_order = if (facing_camera) 2 else 3,
         },
         .{
             .kind = .forklift_forks,
-            .depth = vehicle_depth,
+            .depth = fork_depth,
             .occlusion_z = vehicle.forkZ(forklift.fork_height),
             .local_order = if (facing_camera) 3 else 1,
         },
         .{
             .kind = .pallet,
             .depth = if (pallet.state == .carried)
-                vehicle_depth
+                fork_depth
             else
                 camera.depth(pallet.position, camera_state),
             .occlusion_z = pallet_z,
@@ -215,39 +345,40 @@ fn partBefore(left: RenderPart, right: RenderPart) bool {
     return left.local_order < right.local_order;
 }
 
-fn sortSurfaces(surfaces: []OpaqueSurface) void {
-    if (surfaces.len < 2) return;
-    for (1..surfaces.len) |index| {
-        const surface = surfaces[index];
+fn sortSurfaceFragments(fragments: []SurfaceFragment) void {
+    if (fragments.len < 2) return;
+    for (1..fragments.len) |index| {
+        const fragment = fragments[index];
         var insertion = index;
-        while (insertion > 0 and surfaceBefore(surface, surfaces[insertion - 1])) {
-            surfaces[insertion] = surfaces[insertion - 1];
+        while (insertion > 0 and fragmentBefore(fragment, fragments[insertion - 1])) {
+            fragments[insertion] = fragments[insertion - 1];
             insertion -= 1;
         }
-        surfaces[insertion] = surface;
+        fragments[insertion] = fragment;
     }
 }
 
-fn surfaceBefore(
-    left: OpaqueSurface,
-    right: OpaqueSurface,
-) bool {
+fn fragmentBefore(left: SurfaceFragment, right: SurfaceFragment) bool {
     if (left.sort_depth != right.sort_depth) return left.sort_depth < right.sort_depth;
-    return left.support_z < right.support_z;
+    return left.surface.support_z < right.surface.support_z;
 }
 
-pub fn surfaceGroundDepth(surface: OpaqueSurface, camera_state: camera.Camera) f32 {
+const DepthRange = struct { min: f32, max: f32 };
+
+pub fn surfaceDepthRange(surface: OpaqueSurface, camera_state: camera.Camera) DepthRange {
     const bounds = surface.bounds;
-    return @max(
-        @max(
-            camera.depth(.{ .x = bounds.x, .y = bounds.y }, camera_state),
-            camera.depth(.{ .x = bounds.x + bounds.width, .y = bounds.y }, camera_state),
-        ),
-        @max(
-            camera.depth(.{ .x = bounds.x + bounds.width, .y = bounds.y + bounds.height }, camera_state),
-            camera.depth(.{ .x = bounds.x, .y = bounds.y + bounds.height }, camera_state),
-        ),
-    );
+    const depths = [_]f32{
+        camera.depth(.{ .x = bounds.x, .y = bounds.y }, camera_state),
+        camera.depth(.{ .x = bounds.x + bounds.width, .y = bounds.y }, camera_state),
+        camera.depth(.{ .x = bounds.x + bounds.width, .y = bounds.y + bounds.height }, camera_state),
+        camera.depth(.{ .x = bounds.x, .y = bounds.y + bounds.height }, camera_state),
+    };
+    var result = DepthRange{ .min = depths[0], .max = depths[0] };
+    for (depths[1..]) |depth| {
+        result.min = @min(result.min, depth);
+        result.max = @max(result.max, depth);
+    }
+    return result;
 }
 
 pub fn surfaceOccludesPart(surface: OpaqueSurface, part_z: f32) bool {
@@ -274,8 +405,8 @@ const TestSink = struct {
     items: [64]TestDraw = undefined,
     len: usize = 0,
 
-    pub fn drawSurface(self: *TestSink, surface: OpaqueSurface) void {
-        self.items[self.len] = .{ .surface = surface.support_z };
+    pub fn drawSurface(self: *TestSink, fragment: SurfaceFragment) void {
+        self.items[self.len] = .{ .surface = fragment.surface.support_z };
         self.len += 1;
     }
 
@@ -566,4 +697,79 @@ test "dropped pallet uses support height independently of fork height" {
         const load = lastTestDrawIndex(sink.items[0..sink.len], .{ .part = .pallet }).?;
         try std.testing.expect(high_surface < load);
     }
+}
+
+const FragmentTestSink = struct {
+    ranges: [4][2]f32 = undefined,
+    len: usize = 0,
+
+    pub fn drawSurface(self: *FragmentTestSink, fragment: anytype) void {
+        self.ranges[self.len] = .{ fragment.depth_min, fragment.depth_max };
+        self.len += 1;
+    }
+
+    pub fn drawPart(_: *FragmentTestSink, _: RenderPart) void {}
+};
+
+test "diagonal shelf crossing component depths emits contiguous fragments" {
+    var surfaces = [_]OpaqueSurface{.{
+        .bounds = .{ .x = 0, .y = 0, .width = 20, .height = 20 },
+        .support_z = vehicle.forkZ(.rack_low),
+    }};
+    const camera_state = camera.Camera{ .yaw_rad = std.math.pi / 4.0 };
+    const actor_position = math2.Vec2{ .x = 10, .y = 10 };
+    var sink = FragmentTestSink{};
+
+    compose(
+        .{ .position = actor_position },
+        .{ .position = actor_position },
+        &surfaces,
+        camera_state,
+        &sink,
+    );
+
+    const actor_depth = camera.depth(actor_position, camera_state);
+    try std.testing.expect(sink.len >= 2);
+    var found_actor_boundary = false;
+    for (1..sink.len) |index| {
+        try std.testing.expectApproxEqAbs(
+            sink.ranges[index - 1][1],
+            sink.ranges[index][0],
+            0.001,
+        );
+        if (@abs(sink.ranges[index][0] - actor_depth) < 0.001) {
+            found_actor_boundary = true;
+        }
+    }
+    try std.testing.expect(found_actor_boundary);
+}
+
+test "mast shelf ordering uses mast position rather than rear axle" {
+    var surfaces = [_]OpaqueSurface{.{
+        .bounds = .{ .x = 90, .y = 70, .width = 20, .height = 5 },
+        .support_z = vehicle.forkZ(.rack_low),
+    }};
+    const forklift = vehicle.Forklift{
+        .position = .{ .x = 100, .y = 50 },
+        .heading_rad = std.math.pi,
+    };
+    var sink = TestSink{};
+
+    compose(
+        forklift,
+        .{ .position = .{ .x = 300, .y = 300 } },
+        &surfaces,
+        .{},
+        &sink,
+    );
+
+    const surface_index = lastTestDrawIndex(
+        sink.items[0..sink.len],
+        .{ .surface = vehicle.forkZ(.rack_low) },
+    ).?;
+    const mast_index = lastTestDrawIndex(
+        sink.items[0..sink.len],
+        .{ .part = .forklift_mast },
+    ).?;
+    try std.testing.expect(surface_index < mast_index);
 }
