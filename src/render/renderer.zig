@@ -445,6 +445,27 @@ pub fn drawPallet(
         projection.default_tuning,
     );
 
+    const white: pdapi.LCDColor =
+        @intCast(@intFromEnum(pdapi.LCDSolidColor.ColorWhite));
+    playdate.graphics.fillTriangle(
+        @intFromFloat(front_left.x),
+        @intFromFloat(front_left.y),
+        @intFromFloat(front_right.x),
+        @intFromFloat(front_right.y),
+        @intFromFloat(rear_right.x),
+        @intFromFloat(rear_right.y),
+        white,
+    );
+    playdate.graphics.fillTriangle(
+        @intFromFloat(front_left.x),
+        @intFromFloat(front_left.y),
+        @intFromFloat(rear_right.x),
+        @intFromFloat(rear_right.y),
+        @intFromFloat(rear_left.x),
+        @intFromFloat(rear_left.y),
+        white,
+    );
+
     line(playdate, front_left, front_right, 2, color);
     line(playdate, front_right, rear_right, 2, color);
     line(playdate, rear_right, rear_left, 2, color);
