@@ -1,4 +1,4 @@
-const pd = @import("../playdate_api_definitions.zig");
+const pd = @import("../platform_api.zig");
 const effect = @import("pdna_effect_adapter.zig");
 const song = @import("pdna_song_adapter.zig");
 

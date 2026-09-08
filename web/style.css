@@ -1,0 +1,197 @@
+:root {
+  color-scheme: dark;
+  --shell: #252a25;
+  --shell-edge: #101310;
+  --steel: #697169;
+  --lcd: #e7e8d5;
+  --ink: #172119;
+  --hazard: #e7a826;
+  --paper: #c9ccb6;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  color: var(--paper);
+  background:#141714;
+  font-family: "DejaVu Sans Mono", "Liberation Mono", monospace;
+}
+
+.workbench {
+  display: grid;
+  min-height: 100vh;
+  padding: clamp(1rem, 5vw, 4rem);
+  place-items: center;
+}
+
+.console {
+  width: min(100%, 840px);
+  padding: clamp(1rem, 3vw, 2rem);
+  border: 1px solid #555;
+  background: #777;
+  box-shadow: 0 1.7rem 4rem #0009, inset 0 1px #ffffff26, inset 0 -2px #0008;
+}
+
+.console__header,
+.console__controls,
+.control-legend {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.console__header {
+  justify-content: space-between;
+  margin-bottom: 1.15rem;
+}
+
+.eyebrow {
+  margin: 0 0 .4rem;
+  color: var(--hazard);
+  font-size: clamp(.55rem, 1.5vw, .72rem);
+  letter-spacing: .12em;
+}
+
+h1 {
+  margin: 0;
+  color: #f0f1dd;
+  font-family: Rockwell, "DejaVu Serif", serif;
+  font-size: clamp(1.65rem, 5vw, 2.75rem);
+  font-weight: 700;
+  letter-spacing: -.04em;
+  line-height: .85;
+}
+
+h1 span { color: var(--hazard); }
+
+.status {
+  max-width: 14rem;
+  margin: 0;
+  color: #bac3b5;
+  font-size: .72rem;
+  line-height: 1.35;
+  text-align: right;
+}
+
+.display-bezel {
+  padding: clamp(.55rem, 2vw, 1rem);
+  border: 1px solid #080a08;
+  background: #0b0d0b;
+  box-shadow: inset 0 0 0 2px #596057, inset 0 0 .8rem #000;
+}
+
+#screen {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid #aeb19e;
+  outline: none;
+  background: var(--lcd);
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+#screen:focus-visible { box-shadow: 0 0 0 3px var(--hazard); }
+
+.console__controls {
+  justify-content: space-between;
+  margin: 1rem 0;
+}
+
+.start-button {
+  padding: .75rem 1rem;
+  border: 1px solid #ffcc5a;
+  border-radius: .35rem;
+  color: #201806;
+  background: #ffd369;
+  box-shadow: inset 0 1px #fff5, 0 2px #0007;
+  cursor: pointer;
+  font: inherit;
+  font-size: .75rem;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.start-button:hover { filter: brightness(1.08); }
+.start-button:focus-visible, input:focus-visible { outline: 3px solid #f5dc81; outline-offset: 3px; }
+.start-button:disabled { cursor: default; filter: grayscale(.7); opacity: .75; }
+
+.crank-control { display: grid; gap: .35rem; color: #d9dcc7; font-size: .7rem; }
+input[type="range"] { accent-color: var(--hazard); }
+
+.operations-menu {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: .55rem .8rem;
+  margin: .35rem 0 1rem;
+  padding: .75rem;
+  border: 1px solid #0f120f;
+  border-left: 3px solid var(--hazard);
+  border-radius: .3rem;
+  background: #171b17;
+  color: #d9dcc7;
+  font-size: .68rem;
+}
+
+.operations-menu[hidden] { display: none; }
+
+.operations-menu__label {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--hazard);
+  font-size: .58rem;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.operations-menu button,
+.operations-menu select {
+  min-height: 2rem;
+  border: 1px solid #788071;
+  border-radius: .2rem;
+  background: #333a33;
+  color: #f0f1dd;
+  font: inherit;
+}
+
+.operations-menu button { padding: .35rem .6rem; cursor: pointer; }
+.operations-menu select { padding: .2rem .35rem; }
+.operations-menu button:not(:disabled):hover,
+.operations-menu select:not(:disabled):hover { border-color: var(--hazard); }
+.operations-menu :disabled { cursor: default; opacity: .5; }
+
+.control-legend {
+  flex-wrap: wrap;
+  padding-top: .8rem;
+  border-top: 1px solid #7e857a55;
+  color: #bfc5b6;
+  font-size: clamp(.55rem, 1.6vw, .68rem);
+  line-height: 1.5;
+}
+
+kbd {
+  display: inline-block;
+  min-width: 1.35em;
+  margin-right: .15em;
+  padding: .05em .25em;
+  border: 1px solid #7f877e;
+  border-bottom-color: #30362f;
+  border-radius: .18rem;
+  background: #485047;
+  color: #fbfcea;
+  font: inherit;
+  text-align: center;
+}
+
+@media (max-width: 520px) {
+  .console__header { align-items: flex-start; flex-direction: column; }
+  .status { text-align: left; }
+  .console__controls { align-items: end; }
+  .operations-menu { grid-template-columns: 1fr; }
+}

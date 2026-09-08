@@ -1,5 +1,5 @@
 const std = @import("std");
-const pdapi = @import("playdate_api_definitions.zig");
+const pdapi = @import("platform_api.zig");
 const builtin = @import("builtin");
 
 var global_playate: *pdapi.PlaydateAPI = undefined;

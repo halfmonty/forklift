@@ -1,4 +1,4 @@
-const pd = @import("../playdate_api_definitions.zig");
+const pd = @import("../platform_api.zig");
 
 const effect_voice_count = 2;
 

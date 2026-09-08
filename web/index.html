@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#202521" />
+    <title>Forklift Certified — Web</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="workbench">
+      <section class="console" aria-labelledby="game-title">
+        <header class="console__header">
+          <div>
+            <h1 id="game-title">Forklift Certified</h1>
+          </div>
+          <p id="status" class="status" role="status">Ready to start</p>
+        </header>
+
+        <div class="display-bezel">
+          <canvas
+            id="screen"
+            width="400"
+            height="240"
+            tabindex="0"
+            aria-label="Forklift Certified game screen"
+          ></canvas>
+        </div>
+
+        <div class="console__controls">
+          <button id="start" class="start-button" type="button">Start console</button>
+          <div class="crank-control">
+            <label for="crank">Crank</label>
+            <input id="crank" type="range" min="-180" max="180" value="0" step="1" />
+          </div>
+        </div>
+
+        <section id="service-panel" class="operations-menu" aria-label="Console menu">
+          <p class="operations-menu__label">Service panel</p>
+          <button id="restart-job" type="button" disabled>Restart job</button>
+          <label for="steering">Steering response</label>
+          <select id="steering" disabled>
+            <option value="0">Low</option>
+            <option value="1" selected>Medium</option>
+            <option value="2">High</option>
+          </select>
+        </section>
+
+        <footer class="control-legend" aria-label="Controls">
+          <span><kbd>↑</kbd><kbd>↓</kbd> drive</span>
+          <span><kbd>←</kbd><kbd>→</kbd> forks</span>
+          <span><kbd>Z</kbd>/<kbd>Space</kbd> action</span>
+          <span><kbd>X</kbd> camera</span>
+          <span><kbd>Q</kbd>/<kbd>E</kbd> crank</span>
+          <span><kbd>M</kbd> service panel</span>
+        </footer>
+      </section>
+    </main>
+    <script type="module" src="main.js"></script>
+  </body>
+</html>

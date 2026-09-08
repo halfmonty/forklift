@@ -1,4 +1,4 @@
-const pdapi = @import("../playdate_api_definitions.zig");
+const pdapi = @import("../platform_api.zig");
 const campaign = @import("campaign.zig");
 const progress = @import("progress.zig");
 

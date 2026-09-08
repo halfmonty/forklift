@@ -1,4 +1,4 @@
-const pdapi = @import("playdate_api_definitions.zig");
+const pdapi = @import("platform_api.zig");
 const panic_handler = @import("panic_handler.zig");
 const audio = @import("audio/audio.zig");
 const pdna_song = @import("audio/pdna_song_1.zig");
@@ -29,7 +29,15 @@ pub export fn eventHandler(
     const game: *game_module.Game = @ptrCast(@alignCast(
         playdate.system.realloc(null, @sizeOf(game_module.Game)) orelse return 0,
     ));
-    game.* = game_module.Game.init(playdate, game_audio, font);
+    const surface_fragment_buffer: *game_module.SurfaceFragmentBuffer = @ptrCast(@alignCast(
+        playdate.system.realloc(null, @sizeOf(game_module.SurfaceFragmentBuffer)) orelse return 0,
+    ));
+    game.* = game_module.Game.init(
+        playdate,
+        game_audio,
+        font,
+        surface_fragment_buffer,
+    );
 
     _ = playdate.system.addMenuItem(
         "Restart Job",

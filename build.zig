@@ -8,6 +8,59 @@ pub fn build(b: *std.Build) !void {
 
     const pdx_file_name = name ++ ".pdx";
     const optimize = b.standardOptimizeOption(.{});
+    const web_port = b.option(u16, "web-port", "Port used by the web development server") orelse 8001;
+
+    const web_target = b.resolveTargetQuery(try std.Target.Query.parse(.{
+        .arch_os_abi = "wasm32-freestanding",
+    }));
+    const web_mod = b.addModule("forklift_web", .{
+        .root_source_file = b.path("src/web_main.zig"),
+        .target = web_target,
+        .optimize = optimize,
+        .single_threaded = true,
+    });
+    const web_wasm = b.addExecutable(.{
+        .name = name ++ ".wasm",
+        .root_module = web_mod,
+    });
+    web_wasm.entry = .disabled;
+    web_wasm.rdynamic = true;
+    web_wasm.export_memory = true;
+    const install_web = b.addInstallArtifact(web_wasm, .{
+        .dest_dir = .{ .override = .prefix },
+        .dest_sub_path = "web/" ++ name ++ ".wasm",
+    });
+    const install_web_html = b.addInstallFile(b.path("web/index.html"), "web/index.html");
+    const install_web_js = b.addInstallFile(b.path("web/main.js"), "web/main.js");
+    const install_web_css = b.addInstallFile(b.path("web/style.css"), "web/style.css");
+    const web_step = b.step("web", "Build the browser WebAssembly module");
+    web_step.dependOn(&install_web.step);
+    web_step.dependOn(&install_web_html.step);
+    web_step.dependOn(&install_web_js.step);
+    web_step.dependOn(&install_web_css.step);
+    const web_dev = b.addSystemCommand(&.{
+        "python3",
+        "-m",
+        "http.server",
+        b.fmt("{d}", .{web_port}),
+        "--directory",
+        "zig-out/web",
+    });
+    web_dev.step.dependOn(web_step);
+    const web_dev_step = b.step("web-dev", "Build and serve the browser version");
+    web_dev_step.dependOn(&web_dev.step);
+
+    const web_test = b.addSystemCommand(&.{
+        "node",
+        "scripts/test-web.mjs",
+        "zig-out/web/" ++ name ++ ".wasm",
+        "zig-out/web/index.html",
+        "zig-out/web/main.js",
+        "zig-out/web/style.css",
+    });
+    web_test.step.dependOn(web_step);
+    const web_test_step = b.step("web-test", "Run browser WebAssembly integration checks");
+    web_test_step.dependOn(&web_test.step);
 
     const test_module = b.createModule(.{
         .root_source_file = b.path("src/test_root.zig"),
@@ -84,37 +137,38 @@ pub fn build(b: *std.Build) !void {
 
     try addCopyDirectory(writer, "assets", "./assets", io);
 
-    const playdate_sdk_path = b.graph.environ_map.get("PLAYDATE_SDK_PATH") orelse return error.PLAYDATE_SDK_PATH_NOT_SET;
-    const pdc_path = b.pathJoin(&.{ playdate_sdk_path, "bin", if (builtin.os.tag == .windows) "pdc.exe" else "pdc" });
-    const pd_simulator_path = switch (builtin.os.tag) {
-        .linux => b.pathJoin(&.{ playdate_sdk_path, "bin", "PlaydateSimulator" }),
-        .macos => "open", // `open` focuses the window, while running the simulator directry doesn't.
-        .windows => b.pathJoin(&.{ playdate_sdk_path, "bin", "PlaydateSimulator.exe" }),
-        else => @panic("Unsupported OS"),
-    };
+    if (b.graph.environ_map.get("PLAYDATE_SDK_PATH")) |playdate_sdk_path| {
+        const pdc_path = b.pathJoin(&.{ playdate_sdk_path, "bin", if (builtin.os.tag == .windows) "pdc.exe" else "pdc" });
+        const pd_simulator_path = switch (builtin.os.tag) {
+            .linux => b.pathJoin(&.{ playdate_sdk_path, "bin", "PlaydateSimulator" }),
+            .macos => "open", // `open` focuses the window, while running the simulator directry doesn't.
+            .windows => b.pathJoin(&.{ playdate_sdk_path, "bin", "PlaydateSimulator.exe" }),
+            else => @panic("Unsupported OS"),
+        };
 
-    const pdc = b.addSystemCommand(&.{pdc_path});
-    pdc.addDirectoryArg(source_dir);
-    pdc.setName("pdc");
-    const pdx = pdc.addOutputFileArg(pdx_file_name);
+        const pdc = b.addSystemCommand(&.{pdc_path});
+        pdc.addDirectoryArg(source_dir);
+        pdc.setName("pdc");
+        const pdx = pdc.addOutputFileArg(pdx_file_name);
 
-    b.installDirectory(.{
-        .source_dir = pdx,
-        .install_dir = .prefix,
-        .install_subdir = pdx_file_name,
-    });
-    b.installDirectory(.{
-        .source_dir = source_dir,
-        .install_dir = .prefix,
-        .install_subdir = "pdx_source_dir",
-    });
+        b.installDirectory(.{
+            .source_dir = pdx,
+            .install_dir = .prefix,
+            .install_subdir = pdx_file_name,
+        });
+        b.installDirectory(.{
+            .source_dir = source_dir,
+            .install_dir = .prefix,
+            .install_subdir = "pdx_source_dir",
+        });
 
-    const run_cmd = b.addSystemCommand(&.{pd_simulator_path});
-    run_cmd.addDirectoryArg(pdx);
-    run_cmd.setName("PlaydateSimulator");
-    const run_step = b.step("run", "Run the app");
-    run_step.dependOn(&run_cmd.step);
-    run_step.dependOn(b.getInstallStep());
+        const run_cmd = b.addSystemCommand(&.{pd_simulator_path});
+        run_cmd.addDirectoryArg(pdx);
+        run_cmd.setName("PlaydateSimulator");
+        const run_step = b.step("run", "Run the app");
+        run_step.dependOn(&run_cmd.step);
+        run_step.dependOn(b.getInstallStep());
+    }
 }
 
 //The purpose of this function is a result of:

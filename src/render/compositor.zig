@@ -24,6 +24,11 @@ pub const SurfaceFragment = struct {
     draw_front_legs_after: bool,
 };
 
+// Frame-owned storage. Keep this out of the Playdate update callback stack.
+pub const SurfaceFragmentBuffer = struct {
+    items: [max_surface_fragments]SurfaceFragment = undefined,
+};
+
 pub const OpaqueSurfaceCollector = struct {
     renderer: *renderer_module.Renderer,
     items: [max_opaque_surfaces]OpaqueSurface = undefined,
@@ -66,12 +71,18 @@ pub const RenderPart = struct {
 pub const Compositor = struct {
     renderer: *renderer_module.Renderer,
     surfaces: []OpaqueSurface,
+    fragment_buffer: *SurfaceFragmentBuffer,
 
     pub fn init(
         renderer: *renderer_module.Renderer,
         surfaces: []OpaqueSurface,
+        fragment_buffer: *SurfaceFragmentBuffer,
     ) Compositor {
-        return .{ .renderer = renderer, .surfaces = surfaces };
+        return .{
+            .renderer = renderer,
+            .surfaces = surfaces,
+            .fragment_buffer = fragment_buffer,
+        };
     }
 
     pub fn drawDynamic(
@@ -84,11 +95,12 @@ pub const Compositor = struct {
             .forklift = forklift,
             .pallet = pallet,
         };
-        compose(
+        composeWithBuffer(
             forklift,
             pallet,
             self.surfaces,
             self.renderer.camera_state,
+            self.fragment_buffer,
             &sink,
         );
     }
@@ -132,17 +144,35 @@ pub fn compose(
     camera_state: camera.Camera,
     sink: anytype,
 ) void {
+    var fragment_buffer: SurfaceFragmentBuffer = undefined;
+    composeWithBuffer(
+        forklift,
+        pallet,
+        surfaces,
+        camera_state,
+        &fragment_buffer,
+        sink,
+    );
+}
+
+fn composeWithBuffer(
+    forklift: vehicle.Forklift,
+    pallet: cargo.Pallet,
+    surfaces: []OpaqueSurface,
+    camera_state: camera.Camera,
+    fragment_buffer: *SurfaceFragmentBuffer,
+    sink: anytype,
+) void {
     var parts = dynamicParts(forklift, pallet, camera_state);
     sortParts(&parts);
 
-    var fragments: [max_surface_fragments]SurfaceFragment = undefined;
     const fragment_count = buildSurfaceFragments(
         surfaces,
         &parts,
         camera_state,
-        &fragments,
+        &fragment_buffer.items,
     );
-    const active_fragments = fragments[0..fragment_count];
+    const active_fragments = fragment_buffer.items[0..fragment_count];
     sortSurfaceFragments(active_fragments);
 
     var surface_index: usize = 0;

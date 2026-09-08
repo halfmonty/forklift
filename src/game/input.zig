@@ -1,4 +1,4 @@
-const pdapi = @import("../playdate_api_definitions.zig");
+const pdapi = @import("../platform_api.zig");
 
 pub const FrameInput = struct {
     held: pdapi.PDButtons,

@@ -1,5 +1,5 @@
 const std = @import("std");
-const pdapi = @import("../playdate_api_definitions.zig");
+const pdapi = @import("../platform_api.zig");
 const math2 = @import("../sim/math2.zig");
 const vehicle = @import("../sim/vehicle.zig");
 const camera = @import("../render/camera.zig");
@@ -16,6 +16,8 @@ const input = @import("input.zig");
 const progress = @import("progress.zig");
 const progress_store = @import("progress_store.zig");
 const config = @import("../config.zig");
+
+pub const SurfaceFragmentBuffer = compositor.SurfaceFragmentBuffer;
 
 const render_cull_margin: f32 = 50;
 const impact_rearm_distance: f32 = 12;
@@ -87,6 +89,7 @@ pub const Game = struct {
     playdate: *pdapi.PlaydateAPI,
     audio: audio.Audio,
     font: *pdapi.LCDFont,
+    surface_fragment_buffer: *compositor.SurfaceFragmentBuffer,
     forklift: vehicle.Forklift = .{ .position = stages.forkliftSpawn(stages.initial_stage_id) },
     debug_buffer: [192]u8 = undefined,
     camera: camera.Camera = .{},
@@ -114,6 +117,7 @@ pub const Game = struct {
         playdate: *pdapi.PlaydateAPI,
         game_audio: audio.Audio,
         font: *pdapi.LCDFont,
+        surface_fragment_buffer: *compositor.SurfaceFragmentBuffer,
     ) Game {
         const loaded = if (stages.skip_title_screen)
             progress_store.LoadResult{
@@ -127,6 +131,7 @@ pub const Game = struct {
             .playdate = playdate,
             .audio = game_audio,
             .font = font,
+            .surface_fragment_buffer = surface_fragment_buffer,
             .progress_state = loaded.progress,
             .has_saved_progress = loaded.exists,
             .title_selection = if (loaded.exists) .continue_game else .new_game,
@@ -352,7 +357,13 @@ pub const Game = struct {
             }
         }
 
-        camera.follow(&game.camera, game.forklift.position, stages.worldSize(activeStageId(game)));
+        const forward = math2.forwardVector(game.forklift.heading_rad);
+        const camera_target = math2.add(
+            vehicle.bodyCenter(game.forklift),
+            math2.scale(forward, 20),
+        );
+        // camera.follow(&game.camera, camera_target, activeStageWorldSize(game));
+        camera.follow(&game.camera, camera_target, stages.worldSize(activeStageId(game)));
         draw(game);
         return 1;
     }
@@ -649,6 +660,7 @@ fn draw(game: *Game) void {
     var scene_compositor = compositor.Compositor.init(
         &renderer,
         surface_collector.slice(),
+        game.surface_fragment_buffer,
     );
     scene_compositor.drawDynamic(game.forklift, game.pallet);
 

@@ -1,5 +1,5 @@
 const std = @import("std");
-const pdapi = @import("../playdate_api_definitions.zig");
+const pdapi = @import("../platform_api.zig");
 const vehicle = @import("../sim/vehicle.zig");
 const camera = @import("camera.zig");
 const math2 = @import("../sim/math2.zig");

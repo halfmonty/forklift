@@ -8,4 +8,8 @@ test {
     _ = @import("content/static_level.zig");
     _ = @import("game/scoring.zig");
     _ = @import("game/progress.zig");
+    _ = @import("web/input.zig");
+    _ = @import("web/framebuffer.zig");
+    _ = @import("web/font.zig");
+    _ = @import("web/storage.zig");
 }
