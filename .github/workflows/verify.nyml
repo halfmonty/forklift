@@ -1,0 +1,19 @@
+name: Verify
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  host-and-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - run: zig build test
+      - run: zig build web-test
