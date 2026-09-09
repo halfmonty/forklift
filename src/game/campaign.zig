@@ -16,6 +16,7 @@ pub const StageId = enum(u8) {
     stress_test = 2,
     first_warehouse = 3,
     feature_test = 4,
+    conveyor_warehouse = 5,
 };
 
 pub const ShiftId = enum(u8) {
@@ -23,6 +24,7 @@ pub const ShiftId = enum(u8) {
     stress_test = 2,
     first_delivery = 3,
     feature_test = 4,
+    conveyor_delivery = 5,
 };
 
 pub const BriefingTrigger = union(enum) {

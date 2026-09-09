@@ -344,6 +344,15 @@ pub fn StaticLevel(comptime objects: anytype) type {
             return false;
         }
 
+        pub fn collidesCargo(_: @This(), pallet: cargo.Pallet) bool {
+            inline for (objects) |object| {
+                if (object.collisionRect()) |rect| {
+                    if (collision.obbOverlapsRect(pallet.position, pallet.footprint.half_length, pallet.footprint.half_width, pallet.heading_rad, rect)) return true;
+                }
+            }
+            return false;
+        }
+
         pub fn blocksForkLowering(
             _: @This(),
             forklift: vehicle.Forklift,
@@ -454,4 +463,27 @@ test "storage racks emit their configured opaque shelf surfaces" {
     try std.testing.expectEqual(vehicle.forkZ(.rack_low), collector.items[0].support_z);
     try std.testing.expectEqual(vehicle.forkZ(.rack_low), collector.items[1].support_z);
     try std.testing.expectEqual(vehicle.forkZ(.rack_high), collector.items[2].support_z);
+}
+
+test "storage rack blocks fork-height transitions through an occupied shelf" {
+    const rack = StorageRack{
+        .bounds = .{ .x = 40, .y = 25, .width = 20, .height = 20 },
+        .level = .high,
+    };
+    const forklift = vehicle.Forklift{
+        .position = .{ .x = 50, .y = 70 },
+    };
+
+    try std.testing.expect(rack.blocksForkRaising(
+        forklift,
+        null,
+        .carry,
+        .rack_low,
+    ));
+    try std.testing.expect(rack.blocksForkLowering(
+        forklift,
+        null,
+        .rack_low,
+        .carry,
+    ));
 }

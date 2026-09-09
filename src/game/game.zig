@@ -7,6 +7,7 @@ const cargo = @import("../sim/cargo.zig");
 const jobs = @import("../sim/jobs.zig");
 const render = @import("../render/renderer.zig");
 const compositor = @import("../render/compositor.zig");
+const scene = @import("../render/scene.zig");
 const audio = @import("../audio/audio.zig");
 const pdna_effects = @import("../audio/pdna_effects.zig");
 const stages = @import("../content/stages.zig");
@@ -15,9 +16,11 @@ const scoring = @import("scoring.zig");
 const input = @import("input.zig");
 const progress = @import("progress.zig");
 const progress_store = @import("progress_store.zig");
+const warehouse_runtime = @import("../runtime/warehouse_runtime.zig");
 const config = @import("../config.zig");
 
 pub const SurfaceFragmentBuffer = compositor.SurfaceFragmentBuffer;
+pub const RenderScene = scene.RenderScene;
 
 const render_cull_margin: f32 = 50;
 const impact_rearm_distance: f32 = 12;
@@ -37,16 +40,6 @@ const BriefingContinuation = union(enum) {
     shift_start,
     before_job: usize,
 };
-
-fn palletForJob(job: jobs.JobDefinition) cargo.Pallet {
-    return .{
-        .position = job.pallet_spawn.position,
-        .z = job.pallet_spawn.support_z,
-        .support_z = job.pallet_spawn.support_z,
-        .cargo = job.cargo,
-        .footprint = job.cargo.footprint,
-    };
-}
 
 fn activeShift(game: *const Game) *const campaign.ShiftDefinition {
     return &stages.active_campaign.stages[game.stage_index].shifts[game.shift_index];
@@ -90,16 +83,13 @@ pub const Game = struct {
     audio: audio.Audio,
     font: *pdapi.LCDFont,
     surface_fragment_buffer: *compositor.SurfaceFragmentBuffer,
-    forklift: vehicle.Forklift = .{ .position = stages.forkliftSpawn(stages.initial_stage_id) },
+    render_scene: *scene.RenderScene,
+    runtime: warehouse_runtime.WarehouseRuntime = warehouse_runtime.WarehouseRuntime.init(
+        stages.initial_stage_id,
+        &stages.initial_shift,
+    ),
     debug_buffer: [192]u8 = undefined,
     camera: camera.Camera = .{},
-    job_index: usize = 0,
-    pallet: cargo.Pallet = palletForJob(stages.initial_shift.jobs[0]),
-    job_state: jobs.JobState = .waiting_for_pickup,
-    shift_elapsed_seconds: f32 = 0,
-    collision_impacts: u32 = 0,
-    impact_origin: ?math2.Vec2 = null,
-    shift_result: ?scoring.ShiftResult = null,
     frame_ms: f32 = 0,
     restart_requested: bool = false,
     steering_ratio: vehicle.SteeringRatio = .medium,
@@ -118,6 +108,7 @@ pub const Game = struct {
         game_audio: audio.Audio,
         font: *pdapi.LCDFont,
         surface_fragment_buffer: *compositor.SurfaceFragmentBuffer,
+        render_scene: *scene.RenderScene,
     ) Game {
         const loaded = if (stages.skip_title_screen)
             progress_store.LoadResult{
@@ -132,6 +123,7 @@ pub const Game = struct {
             .audio = game_audio,
             .font = font,
             .surface_fragment_buffer = surface_fragment_buffer,
+            .render_scene = render_scene,
             .progress_state = loaded.progress,
             .has_saved_progress = loaded.exists,
             .title_selection = if (loaded.exists) .continue_game else .new_game,
@@ -196,170 +188,34 @@ pub const Game = struct {
         }
 
         if (game.restart_requested) resetCurrentJob(game);
-
-        const previous_position = game.forklift.position;
-        const previous_heading = game.forklift.heading_rad;
-        const previous_pallet = game.pallet;
-
-        vehicle.update(
-            &game.forklift,
-            .{
-                .crank_delta_deg = if (camera_mode) 0 else frame_input.crank_delta_deg,
-                .steering_ratio = game.steering_ratio,
-                .forward = !camera_mode and frame_input.held & pdapi.BUTTON_UP != 0,
-                .reverse = !camera_mode and frame_input.held & pdapi.BUTTON_DOWN != 0,
+        updateCamera(game, frame_input, camera_mode);
+        const step = game.runtime.step(.{
+            .dt = frame_input.dt,
+            .crank_delta_deg = frame_input.crank_delta_deg,
+            .steering_ratio = game.steering_ratio,
+            .forward = frame_input.held & pdapi.BUTTON_UP != 0,
+            .reverse = frame_input.held & pdapi.BUTTON_DOWN != 0,
+            .camera_mode = camera_mode,
+            .raise_pressed = frame_input.pushed & pdapi.BUTTON_RIGHT != 0,
+            .lower_pressed = frame_input.pushed & pdapi.BUTTON_LEFT != 0,
+            .action_pressed = frame_input.pushed & pdapi.BUTTON_A != 0,
+        });
+        if (step.sounds.fork_height_moved) game.audio.play(pdna_effects.fork_height_move);
+        if (step.sounds.pallet_engaged) game.audio.play(pdna_effects.pallet_engagement);
+        switch (step.transition) {
+            .none => {},
+            .next_job => {
+                const next_job_index = step.next_job_index orelse unreachable;
+                if (beforeJobBriefing(activeShift(game), next_job_index) != null) {
+                    beginBriefing(game, .{ .before_job = next_job_index });
+                } else startJob(game, next_job_index);
             },
-            if (game.pallet.state == .carried)
-                game.pallet.cargo.carried_acceleration_multiplier
-            else
-                1.0,
-            frame_input.dt,
-        );
-
-        const lateral_pressed = frame_input.pushed &
-            (pdapi.BUTTON_LEFT | pdapi.BUTTON_RIGHT);
-
-        const previous_fork_height = game.forklift.fork_height;
-        if (camera_mode) {
-            if (frame_input.pushed & pdapi.BUTTON_UP != 0) {
-                camera.snapTo(&game.camera, .north);
-            } else if (frame_input.pushed & pdapi.BUTTON_RIGHT != 0) {
-                camera.snapTo(&game.camera, .east);
-            } else if (frame_input.pushed & pdapi.BUTTON_DOWN != 0) {
-                camera.snapTo(&game.camera, .south);
-            } else if (frame_input.pushed & pdapi.BUTTON_LEFT != 0) {
-                camera.snapTo(&game.camera, .west);
-            } else {
-                camera.rotateBy(
-                    &game.camera,
-                    math2.degreesToRadians(
-                        frame_input.crank_delta_deg *
-                            config.camera_yaw_per_crank_degree,
-                    ),
-                );
-            }
-        } else if (lateral_pressed & pdapi.BUTTON_RIGHT != 0) {
-            var raised_forklift = game.forklift;
-            vehicle.raiseForks(&raised_forklift);
-
-            const carried = if (game.pallet.state == .carried)
-                game.pallet
-            else
-                null;
-
-            if (!stages.blocksForkRaising(
-                activeStageId(game),
-                game.forklift,
-                carried,
-                game.forklift.fork_height,
-                raised_forklift.fork_height,
-            )) {
-                game.forklift.fork_height = raised_forklift.fork_height;
-            }
-        } else if (lateral_pressed & pdapi.BUTTON_LEFT != 0) {
-            var lowered_forklift = game.forklift;
-            vehicle.lowerForks(&lowered_forklift);
-
-            const carried = if (game.pallet.state == .carried)
-                game.pallet
-            else
-                null;
-
-            if (!stages.blocksForkLowering(
-                activeStageId(game),
-                game.forklift,
-                carried,
-                game.forklift.fork_height,
-                lowered_forklift.fork_height,
-            )) {
-                game.forklift.fork_height = lowered_forklift.fork_height;
-            }
+            .shift_completed => game.flow_state = .shift_results,
         }
 
-        if (game.forklift.fork_height != previous_fork_height) {
-            game.audio.play(pdna_effects.fork_height_move);
-        }
-
-        if (game.pallet.state == .carried) cargo.followForks(&game.pallet, game.forklift);
-
-        if (game.impact_origin) |origin| {
-            const displacement = math2.sub(game.forklift.position, origin);
-            if (math2.dot(displacement, displacement) >= impact_rearm_distance * impact_rearm_distance) {
-                game.impact_origin = null;
-            }
-        }
-
-        if (forkliftCollides(activeStageId(game), game.forklift, game.pallet)) {
-            if (game.impact_origin == null) {
-                game.collision_impacts += 1;
-                game.impact_origin = previous_position;
-            }
-            game.forklift.position = previous_position;
-            game.forklift.heading_rad = previous_heading;
-            game.forklift.speed = 0;
-            game.pallet = previous_pallet;
-        }
-
-        if (frame_input.pushed & pdapi.BUTTON_A != 0) {
-            if (game.pallet.state == .carried) {
-                if (game.forklift.fork_height == .floor) {
-                    cargo.drop(&game.pallet);
-                } else if (stages.palletDropSupport(
-                    activeStageId(game),
-                    game.forklift.fork_height,
-                    game.pallet,
-                )) |support_z| {
-                    cargo.dropAt(&game.pallet, support_z);
-                }
-            } else {
-                const pickup_height_matches = @abs(
-                    vehicle.forkZ(game.forklift.fork_height) -
-                        game.pallet.support_z,
-                ) < 0.1;
-
-                if (pickup_height_matches and
-                    cargo.tryPickup(&game.pallet, game.forklift, pickup_tuning))
-                {
-                    game.audio.play(pdna_effects.pallet_engagement);
-                    if (game.forklift.fork_height == .floor) {
-                        game.forklift.fork_height = .carry;
-                    }
-                }
-            }
-        }
-
-        if (game.pallet.state == .carried) {
-            cargo.followForks(&game.pallet, game.forklift);
-            game.pallet.z = vehicle.forkZ(game.forklift.fork_height);
-        }
-
-        const shift = activeShift(game);
-        if (game.job_state != .delivered) {
-            game.shift_elapsed_seconds += frame_input.dt;
-            game.job_state = jobs.update(game.job_state, game.pallet, shift.jobs[game.job_index].destination);
-            if (game.job_state == .delivered) {
-                if (game.job_index + 1 < shift.jobs.len) {
-                    const next_job_index = game.job_index + 1;
-                    if (beforeJobBriefing(shift, next_job_index) != null) {
-                        beginBriefing(game, .{ .before_job = next_job_index });
-                    } else {
-                        startJob(game, next_job_index);
-                    }
-                } else {
-                    game.shift_result = scoring.calculate(
-                        shift.scoring,
-                        game.shift_elapsed_seconds,
-                        shift.jobs.len,
-                        game.collision_impacts,
-                    );
-                    game.flow_state = .shift_results;
-                }
-            }
-        }
-
-        const forward = math2.forwardVector(game.forklift.heading_rad);
+        const forward = math2.forwardVector(game.runtime.world.forklift.heading_rad);
         const camera_target = math2.add(
-            vehicle.bodyCenter(game.forklift),
+            vehicle.bodyCenter(game.runtime.world.forklift),
             math2.scale(forward, 20),
         );
         // camera.follow(&game.camera, camera_target, activeStageWorldSize(game));
@@ -370,12 +226,27 @@ pub const Game = struct {
 };
 
 fn beginShift(game: *Game) void {
-    game.job_index = 0;
-    game.shift_elapsed_seconds = 0;
-    game.collision_impacts = 0;
-    game.impact_origin = null;
-    game.shift_result = null;
-    resetCurrentJob(game);
+    game.restart_requested = false;
+    game.runtime.beginShift(activeStageId(game), activeShift(game));
+    game.camera = .{};
+}
+
+fn updateCamera(game: *Game, frame: input.FrameInput, camera_mode: bool) void {
+    if (!camera_mode) return;
+    if (frame.pushed & pdapi.BUTTON_UP != 0) {
+        camera.snapTo(&game.camera, .north);
+    } else if (frame.pushed & pdapi.BUTTON_RIGHT != 0) {
+        camera.snapTo(&game.camera, .east);
+    } else if (frame.pushed & pdapi.BUTTON_DOWN != 0) {
+        camera.snapTo(&game.camera, .south);
+    } else if (frame.pushed & pdapi.BUTTON_LEFT != 0) {
+        camera.snapTo(&game.camera, .west);
+    } else {
+        camera.rotateBy(
+            &game.camera,
+            math2.degreesToRadians(frame.crank_delta_deg * config.camera_yaw_per_crank_degree),
+        );
+    }
 }
 
 fn beginBriefing(
@@ -400,10 +271,7 @@ fn activeBriefingPages(game: *const Game) []const []const u8 {
 }
 
 fn startJob(game: *Game, job_index: usize) void {
-    const shift = activeShift(game);
-    game.job_index = job_index;
-    game.pallet = palletForJob(shift.jobs[job_index]);
-    game.job_state = .waiting_for_pickup;
+    game.runtime.startJob(job_index);
 }
 
 fn enterShift(
@@ -501,12 +369,9 @@ fn updateBriefing(game: *Game, pushed: pdapi.PDButtons) void {
 }
 
 fn resetCurrentJob(game: *Game) void {
-    const shift = activeShift(game);
     game.restart_requested = false;
-    game.forklift.reset(stages.forkliftSpawn(activeStageId(game)));
+    game.runtime.resetCurrentJob();
     game.camera = .{};
-    game.pallet = palletForJob(shift.jobs[game.job_index]);
-    game.job_state = .waiting_for_pickup;
 }
 
 fn updateShiftResults(game: *Game, pushed: pdapi.PDButtons) void {
@@ -560,7 +425,7 @@ fn updateCampaignComplete(game: *Game, pushed: pdapi.PDButtons) void {
 }
 
 fn drawShiftResults(game: *Game) void {
-    const result = game.shift_result orelse return;
+    const result = game.runtime.world.shift_result orelse return;
     const shift = activeShift(game);
     const playdate = game.playdate;
     playdate.graphics.clear(@intCast(@intFromEnum(pdapi.LCDSolidColor.ColorWhite)));
@@ -645,41 +510,36 @@ fn draw(game: *Game) void {
     const playdate = game.playdate;
     playdate.graphics.clear(@intCast(@intFromEnum(pdapi.LCDSolidColor.ColorWhite)));
     var renderer = render.Renderer.init(playdate, game.camera, render_cull_margin);
-    const entity_depth = if (game.pallet.state == .carried)
-        @max(camera.depth(game.forklift.position, game.camera), camera.depth(game.pallet.position, game.camera))
+    const pallet = game.runtime.world.primaryCargo();
+    const entity_depth = if (pallet.state == .carried)
+        @max(camera.depth(game.runtime.world.forklift.position, game.camera), camera.depth(pallet.position, game.camera))
     else
-        camera.depth(game.forklift.position, game.camera);
+        camera.depth(game.runtime.world.forklift.position, game.camera);
     const stage_id = activeStageId(game);
-    stages.drawWarehouse(stage_id, &renderer, .before_actors, entity_depth);
-    const shift = activeShift(game);
-    renderer.destination(shift.jobs[game.job_index].destination);
-    stages.drawDecorativePallets(stage_id, &renderer);
-    renderer.palletShadow(game.pallet);
-    var surface_collector = compositor.OpaqueSurfaceCollector.init(&renderer);
-    stages.collectOpaqueSurfaces(stage_id, &surface_collector);
-    var scene_compositor = compositor.Compositor.init(
-        &renderer,
-        surface_collector.slice(),
-        game.surface_fragment_buffer,
-    );
-    scene_compositor.drawDynamic(game.forklift, game.pallet);
-
-    stages.drawWarehouse(stage_id, &renderer, .after_actors, entity_depth);
-    const job_label = switch (game.job_state) {
+    game.render_scene.clear();
+    game.render_scene.append(.{ .warehouse = .{ .stage_id = stage_id, .phase = .before_actors, .actor_depth = entity_depth } });
+    game.render_scene.append(.{ .destination = game.runtime.world.objective.destination });
+    game.render_scene.append(.{ .decorative_pallets = stage_id });
+    game.render_scene.append(.{ .conveyors = stage_id });
+    game.render_scene.append(.{ .pallet_shadow = pallet.* });
+    game.render_scene.append(.{ .dynamic = .{ .stage_id = stage_id, .forklift = game.runtime.world.forklift, .pallet = pallet.* } });
+    game.render_scene.append(.{ .warehouse = .{ .stage_id = stage_id, .phase = .after_actors, .actor_depth = entity_depth } });
+    game.render_scene.submit(&renderer, game.surface_fragment_buffer);
+    const job_label = switch (game.runtime.world.objective.job_state) {
         .waiting_for_pickup => "PICK UP PALLET",
         .carrying => "DELIVER PALLET",
         .delivered => "JOB COMPLETE",
     };
-    const pickup = cargo.evaluateForkEntry(game.forklift, game.pallet, pickup_tuning);
+    const pickup = cargo.evaluateForkEntry(game.runtime.world.forklift, pallet.*, pickup_tuning);
     const render_stats = renderer.stats;
     const text = std.fmt.bufPrint(&game.debug_buffer, "job={s}\ntime={d:.1}\npickup={}\ncarried={}\nangle={d:.0} depth={d:.1}\nfork_z={d:.0}\nframe={d:.1}ms\nsubmit={d} cull={d}", .{
         job_label,
-        game.shift_elapsed_seconds,
-        pickup.valid and game.forklift.fork_height == .floor,
-        game.pallet.state == .carried,
+        game.runtime.world.shift_elapsed_seconds,
+        pickup.valid and game.runtime.world.forklift.fork_height == .floor,
+        pallet.state == .carried,
         pickup.angle_error_rad * 180.0 / std.math.pi,
         pickup.insertion_depth,
-        vehicle.forkZ(game.forklift.fork_height),
+        vehicle.forkZ(game.runtime.world.forklift.fork_height),
         game.frame_ms,
         render_stats.submitted,
         render_stats.culled,
@@ -688,11 +548,39 @@ fn draw(game: *Game) void {
     playdate.system.drawFPS(320, 8);
 }
 
-fn forkliftCollides(
-    stage_id: campaign.StageId,
-    forklift: vehicle.Forklift,
-    pallet: cargo.Pallet,
-) bool {
-    const carried = if (pallet.state == .carried) pallet else null;
-    return stages.collides(stage_id, forklift, carried);
+test "reset current job restores its initial forklift and pallet state" {
+    var game: Game = undefined;
+    game.stage_index = 0;
+    game.shift_index = 0;
+    game.restart_requested = true;
+    game.runtime = warehouse_runtime.WarehouseRuntime.init(
+        stages.initial_stage_id,
+        &stages.initial_shift,
+    );
+    game.runtime.world.forklift = .{
+        .position = .{ .x = 0, .y = 0 },
+        .heading_rad = 1.2,
+        .speed = 50,
+        .fork_height = .rack_high,
+    };
+    game.runtime.world.primaryCargo().* = .{
+        .position = .{ .x = 10, .y = 10 },
+        .state = .carried,
+        .z = vehicle.forkZ(.rack_high),
+    };
+    game.runtime.world.objective.job_state = .delivered;
+
+    resetCurrentJob(&game);
+
+    const shift = activeShift(&game);
+    try std.testing.expect(!game.restart_requested);
+    try std.testing.expectEqual(
+        stages.forkliftSpawn(activeStageId(&game)),
+        game.runtime.world.forklift.position,
+    );
+    try std.testing.expectEqual(@as(f32, 0), game.runtime.world.forklift.heading_rad);
+    try std.testing.expectEqual(@as(f32, 0), game.runtime.world.forklift.speed);
+    try std.testing.expectEqual(vehicle.ForkHeight.floor, game.runtime.world.forklift.fork_height);
+    try std.testing.expectEqual(game.runtime.world.objective.destination, shift.jobs[0].destination);
+    try std.testing.expectEqual(jobs.JobState.waiting_for_pickup, game.runtime.world.objective.job_state);
 }

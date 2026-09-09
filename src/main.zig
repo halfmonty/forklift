@@ -32,11 +32,16 @@ pub export fn eventHandler(
     const surface_fragment_buffer: *game_module.SurfaceFragmentBuffer = @ptrCast(@alignCast(
         playdate.system.realloc(null, @sizeOf(game_module.SurfaceFragmentBuffer)) orelse return 0,
     ));
+    const render_scene: *game_module.RenderScene = @ptrCast(@alignCast(
+        playdate.system.realloc(null, @sizeOf(game_module.RenderScene)) orelse return 0,
+    ));
+    render_scene.* = .{};
     game.* = game_module.Game.init(
         playdate,
         game_audio,
         font,
         surface_fragment_buffer,
+        render_scene,
     );
 
     _ = playdate.system.addMenuItem(

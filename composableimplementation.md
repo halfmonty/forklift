@@ -163,6 +163,31 @@ the commit or handoff note.
 Exit criteria: no production behavior change; the script is practical in the
 simulator and on hardware.
 
+#### Manual regression procedure
+
+1. Run the native simulator and begin a new campaign. Advance through the
+   initial briefing and verify the shift starts with the forklift and pallet
+   at their authored positions.
+2. Drive forward and reverse, then hold the camera button while using all four
+   directions and the crank. Confirm drive input is suppressed in camera mode
+   and the view changes without moving the forklift.
+3. At clear floor space, raise and lower the forks through every height. Repeat
+   near a rack with forks or carried cargo intersecting a shelf; the forbidden
+   height crossing must be rejected.
+4. Pick up, carry, and drop the standard and heavy cargo in the production
+   campaign. In the existing stress-test configuration, repeat for the long
+   cargo and a rack-supported pallet.
+5. Drive a carried pallet into a solid at more than one approach angle. Confirm
+   forklift position, heading, speed, and cargo return to their last valid
+   state, and that a sustained contact counts as one impact until rearmed.
+6. Deliver every job in a shift, including the briefing before the heavy job;
+   verify job labels, score/result values, promotion, and return flow.
+7. During an active job, use the system-menu restart action. Confirm the
+   forklift, camera, pallet, job state, timer, and collision state reset.
+8. Complete or advance campaign progress, return to the title screen, choose
+   Continue, and confirm the saved location is resumed. Repeat on hardware
+   before accepting any later slice that changes controls or rendering.
+
 ### Slice 1 — introduce world state and a parity adapter
 
 1. Add the runtime module, `CargoId`, capacity-one `CargoStore`, `World`, and

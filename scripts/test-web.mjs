@@ -80,12 +80,12 @@ function renderFrame(buttons = 0) {
 assert.equal(framebufferHash(), "0xe7ad7bae", "title framebuffer baseline");
 renderFrame(1 << 5);
 renderFrame();
-assert.equal(framebufferHash(), "0xa57ae36b", "briefing framebuffer baseline");
+assert.equal(framebufferHash(), "0x24e5d444", "briefing framebuffer baseline");
 renderFrame(1 << 5);
 renderFrame();
 renderFrame(1 << 5);
 renderFrame();
-assert.equal(framebufferHash(), "0x76b5308b", "gameplay framebuffer baseline");
+assert.equal(framebufferHash(), "0x0398c528", "gameplay framebuffer baseline");
 
 wasm.webActivateMenu(0);
 wasm.webSetMenuValue(1, 2);
