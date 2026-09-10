@@ -518,6 +518,8 @@ fn draw(game: *Game) void {
     const stage_id = activeStageId(game);
     game.render_scene.clear();
     game.render_scene.append(.{ .warehouse = .{ .stage_id = stage_id, .phase = .before_actors, .actor_depth = entity_depth } });
+    game.render_scene.append(.{ .pressure_plates = .{ .stage_id = stage_id, .active = game.runtime.world.pressure_plates.active[0..] } });
+    game.render_scene.append(.{ .gates = .{ .stage_id = stage_id, .open = game.runtime.world.gates.open[0..] } });
     game.render_scene.append(.{ .destination = game.runtime.world.objective.destination });
     game.render_scene.append(.{ .decorative_pallets = stage_id });
     game.render_scene.append(.{ .conveyors = stage_id });

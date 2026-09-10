@@ -25,6 +25,7 @@ Write your [Playdate](https://play.date) game in [Zig](https://ziglang.org)!  Us
 - [WebAssembly/browser port plan](webplan.md) -- compatibility-runtime approach and staged implementation plan for running Forklift Certified in a browser.
 - [Composable warehouse runtime plan](composable.md) -- migration plan for stateful warehouse mechanics, starting with conveyors.
 - [Composable warehouse runtime implementation plan](composableimplementation.md) -- concrete slice execution plan, runtime contracts, and conveyor proof slice.
+- [Web render authoring tool plan](rendererauthoring.md) -- browser-based native-render authoring, export, and verification plan for 2.5D and screen graphics.
 - [Browser Playdate API priorities](pdapi.md) -- ordered backlog for remaining WASM compatibility work.
 - `build.zig` -- Prepopulated with code that will generate the Playdate `.pdx` executable.
 - `src/playdate_api_definitions.zig` -- Contains all of the Playdate API code.  This is 1-to-1 with [Playdate's C API](https://sdk.play.date/3.0.0/Inside%20Playdate%20with%20C.html)

@@ -6,6 +6,7 @@ test {
     _ = @import("sim/conveyor.zig");
     _ = @import("sim/jobs.zig");
     _ = @import("render/camera.zig");
+    _ = @import("render/authoring/contract.zig");
     _ = @import("render/scene.zig");
     _ = @import("content/static_level.zig");
     _ = @import("game/scoring.zig");

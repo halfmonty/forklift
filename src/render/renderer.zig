@@ -146,6 +146,22 @@ pub const Renderer = struct {
         drawDestination(self.playdate, zone, self.camera_state, black);
     }
 
+    pub fn pressurePlate(
+        self: *Renderer,
+        bounds: collision.Rect,
+        active: bool,
+    ) void {
+        if (!self.acceptsRect(bounds)) return;
+
+        drawPressurePlate(
+            self.playdate,
+            bounds,
+            active,
+            self.camera_state,
+            black,
+        );
+    }
+
     pub fn cone(self: *Renderer, position: math2.Vec2) void {
         if (!self.acceptsPoint(position)) return;
         drawCone(self.playdate, position, self.camera_state, black);
@@ -790,6 +806,60 @@ pub fn drawDestination(
     drawProjectedRect(playdate, zone, 0, camera_state, 1, color);
     line(playdate, corners[0], corners[2], 1, color);
     line(playdate, corners[1], corners[3], 1, color);
+}
+
+pub fn drawPressurePlate(
+    playdate: *pdapi.PlaydateAPI,
+    bounds: collision.Rect,
+    active: bool,
+    camera_state: camera.Camera,
+    color: pdapi.LCDColor,
+) void {
+    const outer_z: f32 = if (active) 1 else 4;
+    const inner_z: f32 = if (active) 0 else 2;
+    const line_width: c_int = if (active) 3 else 1;
+
+    // Raised outer housing when idle; visibly depressed when active.
+    drawProjectedRect(
+        playdate,
+        bounds,
+        outer_z,
+        camera_state,
+        line_width,
+        color,
+    );
+
+    const inset: f32 = @min(8, @min(
+        bounds.width * 0.25,
+        bounds.height * 0.25,
+    ));
+
+    const center = collision.Rect{
+        .x = bounds.x + inset,
+        .y = bounds.y + inset,
+        .width = bounds.width - inset * 2,
+        .height = bounds.height - inset * 2,
+    };
+
+    drawProjectedRect(
+        playdate,
+        center,
+        inner_z,
+        camera_state,
+        1,
+        color,
+    );
+
+    if (active) {
+        const corners = projectedRectCorners(
+            center,
+            inner_z,
+            camera_state,
+        );
+
+        line(playdate, corners[0], corners[2], 1, color);
+        line(playdate, corners[1], corners[3], 1, color);
+    }
 }
 
 pub fn line(

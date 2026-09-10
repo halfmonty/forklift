@@ -5,6 +5,7 @@ const cargo = @import("../sim/cargo.zig");
 const jobs = @import("../sim/jobs.zig");
 const campaign = @import("../game/campaign.zig");
 const vehicle = @import("../sim/vehicle.zig");
+const pressure_plate = @import("../sim/pressureplate.zig");
 
 pub const forklift_spawn = math2.Vec2{ .x = 1200, .y = 800 };
 pub const world_size = math2.Vec2{ .x = 2400, .y = 1600 };
@@ -13,6 +14,29 @@ pub const world_size = math2.Vec2{ .x = 2400, .y = 1600 };
 //     .bounds = .{ .x = 1572, .y = 844, .width = 56, .height = 140 },
 //     .level = .low,
 // };
+
+pub const gates = [_]pressure_plate.Gate{
+    .{
+        .bounds = .{
+            .x = 1500,
+            .y = 720,
+            .width = 40,
+            .height = 180,
+        },
+    },
+};
+
+pub const pressure_plates = [_]pressure_plate.PressurePlate{
+    .{
+        .bounds = .{
+            .x = 1420,
+            .y = 1040,
+            .width = 100,
+            .height = 100,
+        },
+        .gate_index = 0,
+    },
+};
 
 const stacked_rack = static_level.StorageRack{
     .bounds = .{ .x = 1300, .y = 704, .width = 56, .height = 140 },
@@ -79,4 +103,16 @@ pub fn palletDropSupport(
     //     return support_z;
     // }
     return stacked_rack.dropSupport(fork_height, pallet);
+}
+
+test "pressure plates reference authored gates" {
+    for (pressure_plates) |plate| {
+        try @import("std").testing.expect(
+            plate.gate_index < gates.len,
+        );
+    }
+
+    try @import("std").testing.expect(
+        gates.len <= @import("../runtime/world.zig").max_gates,
+    );
 }

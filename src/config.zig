@@ -11,4 +11,4 @@ pub const camera_yaw_per_crank_degree: f32 = 1.0;
 
 // Development-only selection. Production stages belong in production_stages.
 pub const use_stress_stage = false;
-pub const use_feature_test_stage = false;
+pub const use_feature_test_stage = true;

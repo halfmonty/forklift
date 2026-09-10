@@ -39,6 +39,14 @@ pub const Event = union(enum) {
     cargo_transported: world_module.CargoId,
     collision_impact: void,
     objective_completed: void,
+    pressure_plate_changed: struct {
+        plate_index: usize,
+        active: bool,
+    },
+    gate_changed: struct {
+        gate_index: usize,
+        open: bool,
+    },
 };
 
 pub const Command = union(enum) {
@@ -250,6 +258,8 @@ pub const WarehouseRuntime = struct {
             pallet.z = vehicle.forkZ(self.world.forklift.fork_height);
         }
 
+        updatePressurePlates(self);
+
         if (self.world.objective.job_state != .delivered) {
             self.world.shift_elapsed_seconds += frame.dt;
             self.world.objective.job_state = jobs.update(
@@ -307,6 +317,52 @@ fn restoreAfterCollision(
     forklift.heading_rad = previous_heading;
     forklift.speed = 0;
     pallet.* = previous_pallet;
+}
+
+fn updatePressurePlates(
+    self: *WarehouseRuntime,
+) void {
+    const plates = stages.pressurePlates(self.stage_id);
+    const gates = stages.gates(self.stage_id);
+
+    std.debug.assert(plates.len <= world_module.max_pressure_plates);
+    std.debug.assert(gates.len <= world_module.max_gates);
+
+    var desired_gate_open = [_]bool{false} ** world_module.max_gates;
+
+    const pallet = self.world.primaryCargo();
+
+    for (plates, 0..) |plate, plate_index| {
+        std.debug.assert(plate.gate_index < gates.len);
+
+        const active = pallet.state == .floor and pointInsideRect(pallet.position, plate.bounds);
+
+        if (self.world.pressure_plates.setActive(
+            plate_index,
+            active,
+        )) {
+            self.events.append(.{
+                .pressure_plate_changed = .{
+                    .plate_index = plate_index,
+                    .active = active,
+                },
+            }) catch unreachable;
+        }
+
+        if (active) {
+            desired_gate_open[plate.gate_index] = true;
+        }
+    }
+
+    for (gates, 0..) |_, gate_index| {
+        const open = desired_gate_open[gate_index];
+
+        if (self.world.gates.setOpen(gate_index, open)) {
+            self.events.append(.{
+                .gate_changed = .{ .gate_index = gate_index, .open = open },
+            }) catch unreachable;
+        }
+    }
 }
 
 fn pointInsideRect(point: math2.Vec2, rect: @import("../sim/collision.zig").Rect) bool {

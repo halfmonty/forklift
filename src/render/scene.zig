@@ -17,6 +17,14 @@ pub const Entry = union(enum) {
     conveyors: campaign.StageId,
     pallet_shadow: cargo.Pallet,
     dynamic: struct { stage_id: campaign.StageId, forklift: vehicle.Forklift, pallet: cargo.Pallet },
+    pressure_plates: struct {
+        stage_id: campaign.StageId,
+        active: []const bool,
+    },
+    gates: struct {
+        stage_id: campaign.StageId,
+        open: []const bool,
+    },
 };
 
 pub const RenderScene = struct {
@@ -44,6 +52,28 @@ pub const RenderScene = struct {
                 var scene_compositor = compositor.Compositor.init(renderer, collector.slice(), fragments);
                 scene_compositor.drawDynamic(item.forklift, item.pallet);
             },
+            .pressure_plates => |item| {
+                for (
+                    stages.pressurePlates(item.stage_id),
+                    0..,
+                ) |plate, plate_index| {
+                    if (plate_index >= item.active.len) continue;
+
+                    renderer.pressurePlate(
+                        plate.bounds,
+                        item.active[plate_index],
+                    );
+                }
+            },
+            .gates => |item| {
+                for (stages.gates(item.stage_id), 0..) |gate, gate_index| {
+                    if (gate_index >= item.open.len) continue;
+
+                    if (!item.open[gate_index]) {
+                        renderer.obstacle(gate.bounds);
+                    }
+                }
+            },
         };
     }
 };
@@ -56,4 +86,26 @@ test "render scene preserves semantic submission order" {
     try std.testing.expectEqual(@as(usize, 2), scene.len);
     try std.testing.expectEqual(zone, scene.entries[0].destination);
     try std.testing.expectEqual(campaign.StageId.training_facility, scene.entries[1].decorative_pallets);
+}
+
+test "render scene carries pressure plate and gate state" {
+    var scene = RenderScene{};
+    const active = [_]bool{true};
+    const open = [_]bool{false};
+
+    scene.append(.{
+        .pressure_plates = .{
+            .stage_id = .feature_test,
+            .active = active[0..],
+        },
+    });
+    scene.append(.{
+        .gates = .{
+            .stage_id = .feature_test,
+            .open = open[0..],
+        },
+    });
+
+    try std.testing.expect(scene.entries[0].pressure_plates.active[0]);
+    try std.testing.expect(!scene.entries[1].gates.open[0]);
 }

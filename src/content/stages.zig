@@ -12,6 +12,7 @@ const vehicle = @import("../sim/vehicle.zig");
 const render = @import("../render/renderer.zig");
 const compositor = @import("../render/compositor.zig");
 const config = @import("../config.zig");
+const pressure_plate = @import("../sim/pressureplate.zig");
 
 const production_stages = [_]campaign.StageDefinition{
     conveyor_warehouse.stage,
@@ -55,6 +56,8 @@ pub const WarehouseDescriptor = struct {
     collect_opaque_surfaces: *const fn (*compositor.OpaqueSurfaceCollector) void,
     draw_decorative_pallets: *const fn (*render.Renderer) void,
     pallet_drop_support: *const fn (vehicle.ForkHeight, cargo.Pallet) ?f32,
+    pressure_plates: *const fn () []const pressure_plate.PressurePlate,
+    gates: *const fn () []const pressure_plate.Gate,
 };
 
 fn descriptorFor(comptime content: anytype) WarehouseDescriptor {
@@ -105,6 +108,22 @@ fn descriptorFor(comptime content: anytype) WarehouseDescriptor {
                 return if (@hasDecl(content, "palletDropSupport")) content.palletDropSupport(h, p) else null;
             }
         }.call,
+        .pressure_plates = struct {
+            fn call() []const pressure_plate.PressurePlate {
+                return if (@hasDecl(content, "pressure_plates"))
+                    &content.pressure_plates
+                else
+                    &[_]pressure_plate.PressurePlate{};
+            }
+        }.call,
+        .gates = struct {
+            fn call() []const pressure_plate.Gate {
+                return if (@hasDecl(content, "gates"))
+                    &content.gates
+                else
+                    &[_]pressure_plate.Gate{};
+            }
+        }.call,
     };
 }
 
@@ -139,6 +158,18 @@ pub fn cargoCollides(stage_id: campaign.StageId, pallet: cargo.Pallet) bool {
 pub fn conveyors(stage_id: campaign.StageId) []const Conveyor {
     if (stage_id == .conveyor_warehouse) return &conveyor_warehouse.conveyors;
     return &[_]Conveyor{};
+}
+
+pub fn pressurePlates(
+    stage_id: campaign.StageId,
+) []const pressure_plate.PressurePlate {
+    return descriptor(stage_id).pressure_plates();
+}
+
+pub fn gates(
+    stage_id: campaign.StageId,
+) []const pressure_plate.Gate {
+    return descriptor(stage_id).gates();
 }
 
 pub fn blocksForkLowering(
@@ -190,4 +221,15 @@ pub fn palletDropSupport(
     pallet: cargo.Pallet,
 ) ?f32 {
     return descriptor(stage_id).pallet_drop_support(fork_height, pallet);
+}
+
+test "feature test exposes its authored pressure plate and gate" {
+    try @import("std").testing.expectEqual(
+        @as(usize, 1),
+        pressurePlates(.feature_test).len,
+    );
+    try @import("std").testing.expectEqual(
+        @as(usize, 1),
+        gates(.feature_test).len,
+    );
 }

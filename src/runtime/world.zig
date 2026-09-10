@@ -49,6 +49,8 @@ pub const TransientState = struct {};
 pub const World = struct {
     forklift: vehicle.Forklift,
     cargo: CargoStore = .{},
+    gates: GateStore = .{},
+    pressure_plates: PressurePlateStore = .{},
     objective: ObjectiveRuntime,
     shift_elapsed_seconds: f32 = 0,
     collision_impacts: u32 = 0,
@@ -97,6 +99,8 @@ pub const World = struct {
             .job_state = .waiting_for_pickup,
             .destination = job.destination,
         };
+        self.gates.clear();
+        self.pressure_plates.clear();
         self.cargo.clear();
         self.cargo.spawn(.primary, palletForJob(job)) catch unreachable;
     }
@@ -124,6 +128,63 @@ pub fn palletForJob(job: jobs.JobDefinition) cargo.Pallet {
         .footprint = job.cargo.footprint,
     };
 }
+
+pub const max_gates = 8;
+
+pub const GateStore = struct {
+    open: [max_gates]bool = [_]bool{false} ** max_gates,
+
+    pub fn clear(self: *GateStore) void {
+        self.open = [_]bool{false} ** max_gates;
+    }
+
+    pub fn isOpen(self: *const GateStore, gate_index: usize) bool {
+        std.debug.assert(gate_index < self.open.len);
+        return self.open[gate_index];
+    }
+
+    pub fn setOpen(
+        self: *GateStore,
+        gate_index: usize,
+        value: bool,
+    ) bool {
+        std.debug.assert(gate_index < self.open.len);
+
+        const changed = self.open[gate_index] != value;
+        self.open[gate_index] = value;
+        return changed;
+    }
+};
+
+pub const max_pressure_plates = 8;
+
+pub const PressurePlateStore = struct {
+    active: [max_pressure_plates]bool = [_]bool{false} ** max_pressure_plates,
+
+    pub fn clear(self: *PressurePlateStore) void {
+        self.active = [_]bool{false} ** max_pressure_plates;
+    }
+
+    pub fn isActive(
+        self: *const PressurePlateStore,
+        plate_index: usize,
+    ) bool {
+        std.debug.assert(plate_index < self.active.len);
+        return self.active[plate_index];
+    }
+
+    pub fn setActive(
+        self: *PressurePlateStore,
+        plate_index: usize,
+        value: bool,
+    ) bool {
+        std.debug.assert(plate_index < self.active.len);
+
+        const changed = self.active[plate_index] != value;
+        self.active[plate_index] = value;
+        return changed;
+    }
+};
 
 test "world initialization creates the first job at its authored state" {
     const shift_jobs = [_]jobs.JobDefinition{.{
@@ -236,4 +297,14 @@ test "world reset restores the active job while preserving shift accounting" {
     try std.testing.expectEqual(@as(f32, 37), world.shift_elapsed_seconds);
     try std.testing.expectEqual(@as(u32, 2), world.collision_impacts);
     try std.testing.expectEqual((math2.Vec2{ .x = 5, .y = 6 }), world.impact_origin.?);
+}
+
+test "gate store resets every gate closed" {
+    var gates = GateStore{};
+    try std.testing.expect(gates.setOpen(2, true));
+    try std.testing.expect(gates.isOpen(2));
+
+    gates.clear();
+
+    try std.testing.expect(!gates.isOpen(2));
 }
